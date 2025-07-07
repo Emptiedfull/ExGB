@@ -232,8 +232,9 @@ func (g *Gameboy) DebugStep() int {
 		IE := g.memory.readAddr(INTERRUPT_ENABLE)
 		IF := g.memory.readAddr(INTERRUPT_FLAG)
 		if IE&IF != 0 {
+
 			g.handleInterrupt()
-			g.UpdateClock(5)
+			// g.UpdateClock(5)
 			return 5
 		}
 	}
@@ -250,7 +251,7 @@ func (g *Gameboy) DebugStep() int {
 				g.haltbug = true
 			}
 		}
-		g.UpdateClock(1)
+		// g.UpdateClock(1)
 		return 1
 	}
 
@@ -258,13 +259,13 @@ func (g *Gameboy) DebugStep() int {
 	if g.haltbug {
 		g.cpu.pc--
 		g.haltbug = false
-		g.UpdateClock(1)
+		// g.UpdateClock(1)
 		return 1
 	}
 	opCode := opcodes[code]
 
 	opCode.Execute(g)
-	g.UpdateClock(opCode.MCycles)
+	// g.UpdateClock(opCode.MCycles)
 	return opCode.MCycles
 
 }

@@ -1,5 +1,7 @@
 package cpu
 
+import "fmt"
+
 const (
 	LY             = 0xFF44
 	LYC            = 0xFF45
@@ -29,6 +31,7 @@ type Ppu struct {
 }
 
 func (g *Gameboy) UpdateGraphics(Mcycles int) {
+
 	Cycles := Mcycles * 4
 
 	if !g.lcdstatus() {
@@ -38,10 +41,13 @@ func (g *Gameboy) UpdateGraphics(Mcycles int) {
 	g.ppu.ScalineCounter -= Cycles
 
 	if g.ppu.ScalineCounter <= 0 {
+
 		g.memory.mem[LY]++
 		line := g.memory.readAddr(LY)
 
-		g.ppu.ScalineCounter = SCANLINECYCLES
+		// fmt.Println("Updating scanline", line)
+
+		g.ppu.ScalineCounter += SCANLINECYCLES
 
 		if line == 144 {
 			g.memory.EFSet(INTERRUPT_FLAG_VBLANK)
@@ -52,6 +58,7 @@ func (g *Gameboy) UpdateGraphics(Mcycles int) {
 		}
 
 		if line < 144 {
+			fmt.Println("Drawing scanline", line)
 			g.DrawScanline()
 		}
 	}
@@ -63,6 +70,7 @@ func (g *Gameboy) DrawScanline() {
 	control := g.memory.readAddr(LCDC)
 
 	if control&0x01 == 0 {
+		fmt.Println("LCD is off, skipping rendering")
 		return
 	}
 
@@ -78,6 +86,73 @@ func (g *Gameboy) DrawScanline() {
 
 func (g *Gameboy) RenderSprite() {
 
+	ysize := 8
+	if testBit(g.memory.readAddr(LCDC), 2) {
+		ysize = 16
+	}
+
+	linesprites := 0
+	for sprite := 0; sprite < 40; sprite++ {
+
+		index := uint16(sprite * 4)
+		yPos := g.memory.readAddr(0xFE00+index) - 16
+		if yPos > g.memory.readAddr(LY) || yPos+byte(ysize) <= g.memory.readAddr(LY) {
+			continue
+		}
+
+		if linesprites >= 10 {
+			break
+		}
+		linesprites++
+
+		xPos := g.memory.readAddr(0xFE00+index+1) - 8
+		tileNum := g.memory.readAddr(0xFE00 + index + 2)
+		attributes := g.memory.readAddr(0xFE00 + index + 3)
+
+		yflip := testBit(attributes, 6)
+		xflip := testBit(attributes, 5)
+		priority := testBit(attributes, 7)
+
+		line := uint16(g.memory.readAddr(LY) - yPos)
+		if yflip {
+			line = uint16(ysize - int(line) - 1)
+		}
+
+		line *= 2
+
+		dataAddr := uint16(tileNum)*16 + 0x8000 + line
+		data1 := g.memory.readAddr(dataAddr)
+		data2 := g.memory.readAddr(dataAddr + 1)
+
+		for x := 7; x >= 0; x-- {
+			colorbit := x
+
+			if xflip {
+				colorbit = 7 - x
+			}
+
+			colorNum := ((data2 >> colorbit) & 1) << 1
+			colorNum |= (data1 >> colorbit) & 1
+			var colorAddr uint16
+			if testBit(attributes, 4) {
+				colorAddr = 0xFF49
+			} else {
+				colorAddr = 0xFF48
+			}
+
+			r, gr, b := g.getColor(colorNum, colorAddr)
+
+			if r == 0 && gr == 0 && b == 0 {
+				continue
+			}
+
+			xPix := 7 - uint8(x) + xPos
+			g.SetPixel(priority, int(xPix), int(g.memory.readAddr(LY)), r, gr, b)
+
+		}
+
+	}
+
 }
 
 func (g *Gameboy) RenderBackground() {
@@ -87,6 +162,95 @@ func (g *Gameboy) RenderBackground() {
 	Windowx := g.memory.readAddr(WINDOWX) - 7
 
 	usingWindow, Signed, tileData, backgroundMem := g.getTileSettings()
+
+	var yPos byte
+	if !usingWindow {
+		yPos = Scrolly + g.memory.readAddr(LY)
+
+	} else {
+		yPos = g.memory.readAddr(LY) - Windowy
+	}
+
+	tileRow := uint16(yPos/8) * 32
+
+	for x := 0; x < 160; x++ {
+		pixel := uint8(x)
+		xPos := pixel + Scrollx
+
+		if usingWindow {
+			if pixel >= Windowx {
+				xPos = pixel - Windowx
+			}
+		}
+
+		tileCol := uint16(xPos / 8)
+		tileAddr := backgroundMem + tileRow + tileCol
+
+		tileLoc := tileData
+
+		if Signed {
+			tileNum := int16(int8(g.memory.readAddr(tileAddr)))
+			tileLoc = uint16(int32(tileLoc) + int32(tileNum+128)*16)
+		} else {
+			tileNum := int16(g.memory.readAddr(tileAddr))
+			tileLoc = tileLoc + uint16(tileNum)*16
+		}
+
+		line := yPos % 8
+		line *= 2
+
+		data1 := g.memory.readAddr(tileLoc + uint16(line))
+		data2 := g.memory.readAddr(tileLoc + uint16(line) + 1)
+
+		colorBit := 7 - (xPos % 8)
+
+		// Extract the color bits from both bytes
+		colorNum := ((data2 >> colorBit) & 1) << 1
+		colorNum |= (data1 >> colorBit) & 1
+
+		g.tileScanline[x] = colorNum
+
+		r, gr, b := g.getColor(colorNum, 0xFF47)
+		g.SetPixel(false, x, int(g.memory.readAddr(LY)), r, gr, b)
+	}
+
+}
+
+func (gb *Gameboy) getColor(colorNum uint8, pallete uint16) (byte, byte, byte) {
+
+	palette := gb.memory.readAddr(pallete)
+
+	// Extract the 2-bit color value from the palette
+	colorIndex := (palette >> (colorNum * 2)) & 0x03
+
+	// Convert to RGB values (Game Boy grayscale)
+	switch colorIndex {
+	case 0:
+		return 255, 255, 255 // White
+	case 1:
+		return 192, 192, 192 // Light gray
+	case 2:
+		return 96, 96, 96 // Dark gray
+	case 3:
+		return 0, 0, 0 // Black
+	default:
+		fmt.Println("Invalid color index:", colorIndex)
+		return 255, 255, 255 // Default to white
+	}
+}
+
+func (gb *Gameboy) SetPixel(priority bool, x int, y int, r, g, b byte) {
+
+	if gb.tileScanline[x] != 0 && !priority {
+		fmt.Println("Skipping pixel at", x, y, "due to priority")
+		return
+	}
+
+	fmt.Println("Setting pixel at", x, y, "to color", r, g, b)
+
+	gb.Screen[x][y][0] = r
+	gb.Screen[x][y][1] = g
+	gb.Screen[x][y][2] = b
 
 }
 

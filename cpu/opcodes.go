@@ -1,7 +1,5 @@
 package cpu
 
-import "fmt"
-
 type OpCode struct {
 	MCycles int
 	Execute func(g *Gameboy)
@@ -665,7 +663,6 @@ func (g *Gameboy) initOpcodes() map[uint8]OpCode {
 		}}, 0xEE: {MCycles: 2, Execute: func(g *Gameboy) {
 			g.XorAu8(g.fetch())
 		}}, 0xEF: {MCycles: 4, Execute: func(g *Gameboy) {
-			fmt.Println("calling 0x28")
 			g.callu16(0x28)
 		}}, 0xF0: {MCycles: 3, Execute: func(g *Gameboy) {
 			Addr := uint16(0xFF00) + uint16(g.fetch())

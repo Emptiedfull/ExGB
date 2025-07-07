@@ -81,9 +81,6 @@ func (m *Memory) readAddr(Addr uint16) uint8 {
 		fmt.Println("Memory read out of bounds at address:", Addr, len(m.mem))
 		return 0
 	}
-	if Addr == 0xFF44 {
-		return 0x90
-	}
 
 	return m.mem[Addr]
 
@@ -120,10 +117,23 @@ func (m *Memory) writeAddr(Addr uint16, val uint8) {
 	case LY:
 		m.mem[Addr] = 0
 		return
+	case 0xFF46: // OAM DMA
+		m.DMA(val)
 	default:
 		m.mem[Addr] = val
 	}
 
+}
+
+func (m *Memory) DMA(val uint8) {
+	addr := uint16(val) << 8
+	for i := 0; i < 0xA0; i++ {
+		if int(addr+uint16(i)) >= len(m.mem) {
+			fmt.Println("DMA write out of bounds at address:", addr+uint16(i))
+			return
+		}
+		m.mem[0xFE00+i] = m.mem[addr+uint16(i)]
+	}
 }
 
 func (m *Memory) EISet(mask INTERRUPT_ENABLE_MASK) {
