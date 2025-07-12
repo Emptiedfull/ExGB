@@ -145,6 +145,8 @@ func (m *Memory) EIGet(mask INTERRUPT_ENABLE_MASK) bool {
 }
 
 func (m *Memory) EFSet(mask INTERRUPT_FLAG_MASK) {
+	Ly := m.readAddr(LY)
+	fmt.Println("Setting interrupt flag:", mask, "at LY:", Ly)
 	m.writeAddr(INTERRUPT_FLAG, m.readAddr(INTERRUPT_FLAG)|uint8(mask))
 }
 

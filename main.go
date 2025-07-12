@@ -2,23 +2,37 @@ package main
 
 import (
 	"fmt"
-	"net/http"
+	"image/color"
 	"os"
 
 	"gbabot/cpu"
 
-	"github.com/gorilla/websocket"
+	"github.com/hajimehoshi/ebiten"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for development
-	},
+type Game struct {
+	gb *cpu.Gameboy
+}
+
+func (g *Game) Update(screen *ebiten.Image) error {
+	return nil
+}
+
+func (g *Game) Draw(screen *ebiten.Image) {
+	// Clear the screen first
+	screen.Fill(color.RGBA{0, 0, 0, 255})
+
+	// Draw the GameBoy screen
+	g.gb.Draw(screen)
+}
+
+func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
+	return 160, 144
 }
 
 func main() {
 	gb := cpu.GBInitDebug()
-	rompath := "./cpu/individual/boot.gb"
+	rompath := "./cpu/individual/acid.gb"
 	romData, err := os.ReadFile(rompath)
 	if err != nil {
 		fmt.Println("Error loading ROM:", err)
@@ -26,103 +40,23 @@ func main() {
 	}
 	gb.LOADROM(romData)
 	fmt.Printf("Game Boy initialized: %+v\n", gb != nil)
+	manual := make(chan bool)
 
-	go gb.Start(nil) // Pass nil for the done channel in this example
-
-	http.HandleFunc("/", serveIndex)
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		HandleWebSocket(w, r, gb)
-	})
-
-	fmt.Println("Starting server on :8080")
-	http.ListenAndServe(":8080", nil)
-}
-
-func HandleWebSocket(w http.ResponseWriter, r *http.Request, g *cpu.Gameboy) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		fmt.Println("Error upgrading connection:", err)
-		return
-	}
-
-	g.Soc = conn
-
-	for {
-
-		_, msg, err := conn.ReadMessage()
-		if err != nil {
-			fmt.Println("Error reading message:", err)
-			break
+	go func() {
+		for {
+			fmt.Scanln()
+			manual <- true
 		}
+	}()
 
-		fmt.Printf("Received message: %s\n", msg)
+	go gb.Start(nil, manual) // Pass nil for the done channel in this example
+
+	ebiten.SetWindowSize(160*2, 144*2) // 4x scale
+	ebiten.SetWindowTitle("ExGB - GameBoy Emulator")
+
+	game := &Game{gb: gb}
+	if err := ebiten.RunGame(game); err != nil {
+		fmt.Println("Error running game:", err)
 	}
-	defer conn.Close()
 
-}
-
-func serveIndex(w http.ResponseWriter, r *http.Request) {
-	html := `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Game Boy Emulator</title>
-    <style>
-        body { margin: 0; padding: 20px; background: #000; color: #fff; font-family: monospace; }
-        canvas { border: 1px solid #fff; image-rendering: pixelated; }
-        #gameboy { text-align: center; }
-    </style>
-</head>
-<body>
-    <div id="gameboy">
-        <h1>Game Boy Emulator</h1>
-        <canvas id="screen" width="160" height="144"></canvas>
-    </div>
-    
-    <script>
-        const canvas = document.getElementById('screen');
-        const ctx = canvas.getContext('2d');
-        
-        // Scale up the canvas for better visibility
-        canvas.style.width = '640px';
-        canvas.style.height = '576px';
-        
-        const ws = new WebSocket('ws://localhost:8080/ws');
-        
-        ws.onopen = function(event) {
-            console.log('Connected to Game Boy emulator');
-        };
-        
-        ws.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-			console.log(data)
-            
-            // Create ImageData from pixel buffer
-            const imageData = ctx.createImageData(data.width, data.height);
-            
-            // Convert RGB to RGBA
-            for (let i = 0; i < data.pixels.length; i += 3) {
-                const pixelIndex = (i / 3) * 4;
-                imageData.data[pixelIndex] = data.pixels[i];     // R
-                imageData.data[pixelIndex + 1] = data.pixels[i + 1]; // G
-                imageData.data[pixelIndex + 2] = data.pixels[i + 2]; // B
-                imageData.data[pixelIndex + 3] = 255; // A (fully opaque)
-            }
-            
-            ctx.putImageData(imageData, 0, 0);
-        };
-        
-        ws.onclose = function(event) {
-            console.log('Disconnected from Game Boy emulator');
-        };
-        
-        ws.onerror = function(error) {
-            console.error('WebSocket error:', error);
-        };
-    </script>
-</body>
-</html>`
-
-	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(html))
 }

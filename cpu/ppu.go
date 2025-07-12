@@ -1,6 +1,11 @@
 package cpu
 
-import "fmt"
+import (
+	"fmt"
+	"image/color"
+
+	"github.com/hajimehoshi/ebiten"
+)
 
 const (
 	LY             = 0xFF44
@@ -28,6 +33,7 @@ const (
 type Ppu struct {
 	Scanline       int
 	ScalineCounter int
+	LYSHADOW       bool
 }
 
 func (g *Gameboy) UpdateGraphics(Mcycles int) {
@@ -43,7 +49,10 @@ func (g *Gameboy) UpdateGraphics(Mcycles int) {
 	if g.ppu.ScalineCounter <= 0 {
 
 		g.memory.mem[LY]++
+
 		line := g.memory.readAddr(LY)
+		g.SetLcdStatus(int(line))
+		// fmt.Println("Updating scanline", line, "LYC", g.memory.readAddr(LYC), "LYSHADOW", g.ppu.LYSHADOW)
 
 		// fmt.Println("Updating scanline", line)
 
@@ -58,29 +67,23 @@ func (g *Gameboy) UpdateGraphics(Mcycles int) {
 		}
 
 		if line < 144 {
-			fmt.Println("Drawing scanline", line)
-			g.DrawScanline()
+			g.DrawScanline(g.memory.readAddr(LCDC), int(line))
 		}
+	} else {
+		g.SetLcdStatus(int(g.memory.mem[LY]))
 	}
 
 }
 
-func (g *Gameboy) DrawScanline() {
-
-	control := g.memory.readAddr(LCDC)
-
-	if control&0x01 == 0 {
-		fmt.Println("LCD is off, skipping rendering")
-		return
-	}
-
-	if testBit(control, 1) {
-		g.RenderSprite()
-	}
+func (g *Gameboy) DrawScanline(control uint8, Scaline int) {
 
 	if testBit(control, 0) {
-		g.RenderBackground()
+		g.RenderBackground(control, Scaline)
 	}
+
+	// if testBit(control, 1) {
+	// 	g.RenderSprite()
+	// }
 
 }
 
@@ -155,26 +158,27 @@ func (g *Gameboy) RenderSprite() {
 
 }
 
-func (g *Gameboy) RenderBackground() {
+func (g *Gameboy) RenderBackground(control uint8, Scanline int) {
 	Scrolly := g.memory.readAddr(SCROLLY)
 	Scrollx := g.memory.readAddr(SCROLLX)
 	Windowy := g.memory.readAddr(WINDOWY)
 	Windowx := g.memory.readAddr(WINDOWX) - 7
 
-	usingWindow, Signed, tileData, backgroundMem := g.getTileSettings()
+	usingWindow, Signed, tileData, backgroundMem := g.getTileSettings(control)
 
 	var yPos byte
 	if !usingWindow {
-		yPos = Scrolly + g.memory.readAddr(LY)
+		yPos = Scrolly + uint8(Scanline)
 
 	} else {
-		yPos = g.memory.readAddr(LY) - Windowy
+		yPos = uint8(Scanline) - Windowy
 	}
 
 	tileRow := uint16(yPos/8) * 32
 
 	for x := 0; x < 160; x++ {
 		pixel := uint8(x)
+
 		xPos := pixel + Scrollx
 
 		if usingWindow {
@@ -190,7 +194,7 @@ func (g *Gameboy) RenderBackground() {
 
 		if Signed {
 			tileNum := int16(int8(g.memory.readAddr(tileAddr)))
-			tileLoc = uint16(int32(tileLoc) + int32(tileNum+128)*16)
+			tileLoc = uint16(int32(tileLoc) + int32(tileNum)*16)
 		} else {
 			tileNum := int16(g.memory.readAddr(tileAddr))
 			tileLoc = tileLoc + uint16(tileNum)*16
@@ -203,8 +207,6 @@ func (g *Gameboy) RenderBackground() {
 		data2 := g.memory.readAddr(tileLoc + uint16(line) + 1)
 
 		colorBit := 7 - (xPos % 8)
-
-		// Extract the color bits from both bytes
 		colorNum := ((data2 >> colorBit) & 1) << 1
 		colorNum |= (data1 >> colorBit) & 1
 
@@ -240,38 +242,35 @@ func (gb *Gameboy) getColor(colorNum uint8, pallete uint16) (byte, byte, byte) {
 }
 
 func (gb *Gameboy) SetPixel(priority bool, x int, y int, r, g, b byte) {
-
-	if gb.tileScanline[x] != 0 && !priority {
-		fmt.Println("Skipping pixel at", x, y, "due to priority")
-		return
+	if x >= 0 && x < 160 && y >= 0 && y < 144 {
+		gb.Screen[x][y][0] = r
+		gb.Screen[x][y][1] = g
+		gb.Screen[x][y][2] = b
 	}
-
-	fmt.Println("Setting pixel at", x, y, "to color", r, g, b)
-
-	gb.Screen[x][y][0] = r
-	gb.Screen[x][y][1] = g
-	gb.Screen[x][y][2] = b
 
 }
 
-func (g *Gameboy) getTileSettings() (usingWindow bool, Signed bool, tileData uint16, backgroundMem uint16) {
-	control := g.memory.readAddr(LCDC)
+func (g *Gameboy) getTileSettings(control uint8) (usingWindow bool, Signed bool, tileData uint16, backgroundMem uint16) {
 	Signed = false
 
 	tileData = uint16(0x8800)
 	backgroundMem = 0x9800
-	windowY := g.memory.readAddr(WINDOWY)
-	if testBit(control, 5) {
-		if windowY <= g.memory.readAddr(LY) {
-			usingWindow = true
+	usingWindow = false
 
+	if testBit(control, 5) {
+		windowY := g.memory.readAddr(WINDOWY)
+		currentLine := g.memory.readAddr(LY)
+
+		// Window is active if current scanline >= window Y position
+		if currentLine >= windowY {
+			usingWindow = true
 		}
 	}
 
 	if testBit(control, 4) {
 		tileData = 0x8000
 	} else {
-		tileData = 0x8800
+		tileData = 0x9000
 		Signed = true
 	}
 
@@ -292,87 +291,85 @@ func (g *Gameboy) getTileSettings() (usingWindow bool, Signed bool, tileData uin
 	return usingWindow, Signed, tileData, backgroundMem
 }
 
-func (g *Gameboy) getTileAddress() {
-	if g.memory.readAddr(LCDC)&0x08 != 0 {
-
-	}
-}
-
 func (g *Gameboy) lcdstatus() bool {
 	return g.memory.readAddr(LCDC)&0x80 != 0
 }
 
-func (g *Gameboy) SetLcdStatus() {
+func (g *Gameboy) SetLcdStatus(Scanline int) {
 	status := g.memory.readAddr(LCDS)
-
+	currentMode := status & 0x03
+	newStatus := status & 0xFC
 	if !g.lcdstatus() {
 		g.ppu.Scanline = 0
 		g.ppu.ScalineCounter = SCANLINECYCLES
 		g.memory.mem[LY] = 0
-
-		g.memory.setLcdMode(Vblank)
+		newStatus |= 0x01
+		g.memory.writeAddr(LCDS, newStatus)
 
 		return
 	}
 
-	currentLine := g.memory.readAddr(LY)
-	currentMode := status & 0x03
 	reqInterrupt := false
 
-	if currentLine >= 144 {
-		g.memory.setLcdMode(1)
+	if g.memory.readAddr(LY) >= 144 {
+		newStatus |= 0x01
 		reqInterrupt = testBit(status, 4)
 	} else {
-		mode2bound := SCANLINECYCLES - 80
-		mode3bound := SCANLINECYCLES - 172
 
-		if currentLine >= uint8(mode2bound) {
-			g.memory.setLcdMode(2)
+		currentCycle := SCANLINECYCLES - g.ppu.ScalineCounter
+
+		if currentCycle < 80 {
+			// Mode 2: OAM Search
+			newStatus |= 0x02
 			reqInterrupt = testBit(status, 5)
+		} else if currentCycle < 252 {
+			// Mode 3: Drawing
+			newStatus |= 0x03
+			// if currentMode != 0x03 {
+			// 	g.DrawScanline(g.memory.readAddr(LCDC), Scanline)
+			// }
 		} else {
-			if currentLine >= uint8(mode3bound) {
-				g.memory.setLcdMode(3)
-			} else {
-				g.memory.setLcdMode(0)
-				reqInterrupt = testBit(status, 3)
-			}
+			// Mode 0: H-Blank
+			newStatus |= 0x00
+			reqInterrupt = testBit(status, 3)
 		}
 	}
 
-	if reqInterrupt && currentMode != g.memory.readAddr(LCDS)&0x03 {
+	if reqInterrupt && currentMode != (newStatus&0x03) {
 		g.memory.EFSet(INTERRUPT_FLAG_LCD)
 	}
 
 	if g.memory.readAddr(LY) == g.memory.readAddr(LYC) {
-		g.memory.writeAddr(LCDS, status|0x04)
-		if testBit(status, 2) {
+		newStatus |= 0x04
+	} else {
+		newStatus &= 0xFB
+	}
+
+	if testBit(status, 6) && (newStatus&0x04) != 0 {
+		if !g.ppu.LYSHADOW {
 			g.memory.EFSet(INTERRUPT_FLAG_LCD)
-		} else {
-			g.memory.writeAddr(LCDS, status&^0x04)
+			g.ppu.LYSHADOW = true
 		}
+	} else {
+		g.ppu.LYSHADOW = false
 	}
-
-	g.memory.writeAddr(LCDS, status)
-
-}
-
-func (m *Memory) setLcdMode(mo mode) {
-	status := m.readAddr(LCDS) & 0xFC
-
-	switch mo {
-	case Hblank:
-		status |= 0x00
-	case Vblank:
-		status |= 0x01
-	case OamSearch:
-		status |= 0x02
-	case Drawing:
-		status |= 0x03
-	}
-
-	m.writeAddr(LCDS, status)
+	g.memory.writeAddr(LCDS, newStatus)
 }
 
 func testBit(status uint8, bit int) bool {
 	return (status & (1 << bit)) != 0
+}
+
+func (g *Gameboy) Draw(screen *ebiten.Image) {
+	if screen == nil {
+		return
+	}
+	for y := 0; y < 144; y++ {
+		for x := 0; x < 160; x++ {
+			r, gColor, b := g.Screen[x][y][0], g.Screen[x][y][1], g.Screen[x][y][2]
+			c := color.RGBA{r, gColor, b, 255}
+			screen.Set(x, y, c)
+		}
+
+	}
 }

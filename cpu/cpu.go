@@ -1,5 +1,7 @@
 package cpu
 
+import "fmt"
+
 type Cpu struct {
 	registers registers
 	pc        uint16
@@ -232,7 +234,7 @@ func (g *Gameboy) DebugStep() int {
 		IE := g.memory.readAddr(INTERRUPT_ENABLE)
 		IF := g.memory.readAddr(INTERRUPT_FLAG)
 		if IE&IF != 0 {
-
+			g.halted = false
 			g.handleInterrupt()
 			// g.UpdateClock(5)
 			return 5
@@ -259,6 +261,7 @@ func (g *Gameboy) DebugStep() int {
 	if g.haltbug {
 		g.cpu.pc--
 		g.haltbug = false
+		fmt.Println("Halt bug detected, stepping back")
 		// g.UpdateClock(1)
 		return 1
 	}
@@ -277,6 +280,7 @@ func (g *Gameboy) handleInterrupt() {
 	interrupts := IE & IF
 
 	if interrupts&0x01 != 0 { // V-Blank
+		fmt.Println("Handling V-Blank interrupt")
 		g.memory.writeAddr(INTERRUPT_FLAG, IF&^0x01)
 		g.serviceInterrupt(0x40)
 	} else if interrupts&0x02 != 0 { // LCD STAT
