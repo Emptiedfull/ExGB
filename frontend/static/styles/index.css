@@ -1,0 +1,470 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+*{
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #88c070; /* Game Boy green */
+    font-family: 'Press Start 2P', monospace;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* Remove the vertical scanlines (body::before) and keep only horizontal */
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent 0px,
+        transparent 2px,
+        rgba(15, 56, 15, 0.09) 2px, 
+        rgba(15, 56, 15, 0.09) 3px,
+        transparent 5px,
+        transparent 12px
+    );
+    pointer-events: none;
+    z-index: 1;
+    animation: scanlines-move 0.2s linear infinite;
+}
+
+@keyframes scanlines-move {
+    0% { transform: translateY(0px); }
+    100% { transform: translateY(12px); } 
+}
+
+@keyframes screen-flicker {
+    0%, 98% { opacity: 1; }
+    99% { opacity: 0.98; }
+    100% { opacity: 1; }
+}
+
+body {
+    animation: screen-flicker 8s infinite;
+}
+
+.content {
+    
+    position: relative;
+    display: flex;
+    height: 100vh;
+    width: 100%;
+    align-items: center;
+    flex-direction: row-reverse;
+    justify-content: space-evenly;
+    z-index: 2;
+    padding-left: 3%;
+    padding-right: 3%;
+   
+    
+}
+
+.menu-cont{
+    height: 60%;
+    width: 70%;
+
+    display: flex;
+    flex-direction: row;
+     animation: menu-glitch 4s infinite
+}
+
+@keyframes button-subtle-glitch {
+    0%, 95%, 100% {
+        filter: none;
+    }
+    96% {
+        filter: hue-rotate(5deg);
+    }
+    97% {
+        filter: hue-rotate(-3deg);
+    }
+    98% {
+        filter: hue-rotate(2deg);
+    }
+    99% {
+        filter: none;
+    }
+}
+
+.menu-controls{
+    height: 100%;
+    width: 15%;
+    display: flex;
+    flex-direction: column ;
+    justify-content: space-evenly;
+
+    
+}
+
+.menu-control {
+    width: 100%;
+    height: 20%;
+    background-color: #8bac0f;
+
+      border: 3px solid #0f380f;
+    border-radius: 6px;
+    
+    /* Multi-layered button effect */
+    box-shadow: 
+        /* Inner white highlight (top-left bevel) */
+        inset 2px 2px 0 #ffffff,
+        inset -2px -2px 0 #306230,
+        
+        /* Button depth/pop-out effect */
+        0 4px 0 #557c44,
+        0 6px 0 #306230,
+        0 8px 0 #0f380f,
+        
+        /* Outer shadow for depth */
+        0 10px 8px rgba(15, 56, 15, 0.4);
+    
+    /* Pixelated rendering */
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    
+    /* Button positioning and interaction */
+    position: relative;
+    cursor: pointer;
+    transition: all 0.1s ease;
+    
+    /* Center content */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    /* Typography for button text */
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: #0f380f;
+    text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
+    letter-spacing: 1px;
+
+    animation: button-subtle-glitch 4s infinite;
+    
+}
+
+.menu {
+    height: 100%;
+    width:70%;
+    background-color: #d8f8c2;
+    
+    /* Multi-layered border effect */
+   
+    border-radius: 6px;
+    
+    /* Multiple box-shadows to create layered border effect */
+    box-shadow: 
+        inset 2px 2px 0 #ffffff,
+
+        /* Medium border layer */
+        0 0 0 4px #0f380f,
+        
+        /* Dark outer border */
+        0 0 0 14px #557c44,
+        0 0 0 18px #0f380f,
+        
+        /* Outer shadow for depth */
+        2px 2px 0 20px #306230,
+        4px 4px 8px 20px rgba(15, 56, 15, 0.4);
+    
+    /* Pixelated rendering */
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    margin-left:10px;
+    position: relative;
+
+    display:flex;
+    justify-content: center;
+
+   
+}
+
+.menu-control:hover {
+    background-color: #9bbc0f;
+    transform: translateY(2px) translateX(-5px);
+    box-shadow: 
+        inset 2px 2px 0 #ffffff,
+        inset -2px -2px 0 #306230,
+        0 3px 0 #557c44,
+        0 5px 0 #306230,
+        0 7px 0 #0f380f,
+        0 9px 6px rgba(15, 56, 15, 0.4);
+}
+
+@keyframes menu-glitch {
+    0%, 85%, 100% {
+        transform: translate(0);
+        filter:contrast(1);
+      
+    }
+    
+    87% {
+        transform: translate(2px, 0);
+        filter:  contrast(1.2);
+      
+    }
+    
+    89% {
+        transform: translate(-1px, 1px);
+        filter:  contrast(0.9);
+
+    }
+    
+    91% {
+        transform: translate(1px, -1px);
+        filter: contrast(1.1);
+       
+    }
+    
+    93% {
+        transform: translate(0, 2px);
+        filter: hue-rotate(-5deg) contrast(1.3);
+    }
+    
+}
+
+
+.menu::after {
+    content: '';
+    position: absolute;
+    top: -13px;
+    left: -11px;
+    right: -11px;
+    height: 8px;
+    background: linear-gradient(to bottom, 
+        #ffffff 0%, 
+        #557c44 50%, 
+        transparent 100%
+    );
+    border-radius: 70px 70px 0 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+
+
+
+
+
+
+.retro-text {
+    color: #0f380f;
+    text-shadow: 1px 1px 0 rgba(15, 56, 15, 0.3);
+    image-rendering: pixelated;
+    letter-spacing: 1px;
+}
+
+.title {
+    font-size: 5em;
+    color: #2977F5; /* Changed to Game Boy dark green */
+    text-align: center;
+    margin-bottom: 20px;
+    
+    /* Pixelated rendering */
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    
+    /* Game Boy style text shadow with glitch effect */
+    text-shadow: 
+        2px 0 0 #306230,
+        -2px 0 0 #8bac0f,
+        0 2px 0 #9bbc0f,
+        0 -2px 0 #0f380f,
+        1px 1px 0 rgba(15, 56, 15, 0.5);
+    
+    animation: pixel-glitch 3s infinite, pixel-flicker 0.8s infinite;
+    
+    
+    letter-spacing: 0.1em;
+    
+    filter: contrast(1.9);
+
+    display: inline-block;
+    position: relative;
+}
+
+.title span {
+    display: inline-block;
+    transition: transform 0.5s ease, text-shadow 0.2s ease;
+    cursor: pointer;
+}
+
+.title span:hover {
+    transform: translateY(-10px) scale(1.1);
+    filter:brightness(1.2);
+    z-index: 10;
+    position: relative;
+}
+
+@keyframes letter-bounce {
+    0%, 100% { transform: translateY(-10px) scale(1.1); }
+    50% { transform: translateY(-15px) scale(1.15); }
+}
+
+.title span:hover {
+    animation: letter-bounce 0.6s ease-in-out infinite;
+}
+
+.title span:nth-child(1):hover { animation-delay: 0s; }
+.title span:nth-child(2):hover { animation-delay: 0.1s; }
+.title span:nth-child(3):hover { animation-delay: 0.2s; }
+.title span:nth-child(4):hover { animation-delay: 0.3s; }
+.title span:nth-child(5):hover { animation-delay: 0.4s; }
+
+
+@keyframes pixel-glitch {
+    0%, 80%, 100% {
+        transform: translate(0);
+        text-shadow: 
+            2px 0 0 #306230,
+            -2px 0 0 #8bac0f,
+            0 2px 0 #9bbc0f,
+            0 -2px 0 #0f380f;
+    }
+    
+    2% {
+        transform: translate(2px, 0);
+        text-shadow: 
+            4px 0 0 #306230,
+            -1px 0 0 #8bac0f,
+            0 2px 0 #9bbc0f;
+    }
+    
+    4% {
+        transform: translate(-1px, 0);
+        text-shadow: 
+            1px 0 0 #306230,
+            -3px 0 0 #8bac0f,
+            0 1px 0 #9bbc0f;
+    }
+    
+    6% {
+        transform: translate(0, 1px);
+        text-shadow: 
+            2px 1px 0 #306230,
+            -2px -1px 0 #8bac0f,
+            1px 3px 0 #9bbc0f;
+    }
+    
+    8% {
+        transform: translate(0);
+        text-shadow: 
+            2px 0 0 #306230,
+            -2px 0 0 #8bac0f,
+            0 2px 0 #9bbc0f,
+            0 -2px 0 #0f380f;
+    }
+}
+
+
+@keyframes pixel-flicker {
+    0%, 98% { 
+        opacity: 1; 
+        filter: contrast(1.2) brightness(1);
+    }
+    99% { 
+        opacity: 0.95; 
+        filter: contrast(1.3) brightness(0.9);
+    }
+    100% { 
+        opacity: 1; 
+        filter: contrast(1.2) brightness(1);
+    }
+}
+
+
+.retro-text {
+    color: #0f380f;
+    
+    /* Pixelated rendering */
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    
+    /* Game Boy style shadow */
+    text-shadow: 
+        1px 0 0 #306230,
+        0 1px 0 #8bac0f,
+        1px 1px 0 rgba(15, 56, 15, 0.3);
+    
+    letter-spacing: 2px;
+    
+    /* Slight glitch effect */
+    animation: text-glitch 8s infinite;
+}
+
+/* Subtle text glitch for regular text */
+@keyframes text-glitch {
+    0%, 96%, 100% {
+        transform: translate(0);
+        filter: none;
+    }
+    
+    97% {
+        transform: translate(1px, 0);
+        filter: hue-rotate(15deg);
+    }
+    
+    98% {
+        transform: translate(-1px, 0);
+        filter: hue-rotate(-15deg);
+    }
+    
+    99% {
+        transform: translate(0, 1px);
+        filter: hue-rotate(10deg);
+    }
+}
+
+/* Pixelated border effect for containers */
+.pixel-border {
+    border: 3px solid #0f380f;
+    border-image: url("data:image/svg+xml,%3csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='m0,0v100h100v-100z' fill='none' stroke='%23306230' stroke-width='3'/%3e%3c/svg%3e") 3;
+    image-rendering: pixelated;
+}
+
+/* Game Boy style button effect */
+.pixel-button {
+    background: #8bac0f;
+    color: #0f380f;
+    border: 2px solid #0f380f;
+    font-family: 'Press Start 2P', monospace;
+    padding: 8px 16px;
+    
+    /* Pixelated rendering */
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    
+    /* Blocky transition */
+    transition: none;
+    
+    cursor: pointer;
+}
+
+.pixel-button:hover {
+    background: #9bbc0f;
+    transform: translate(1px, 1px);
+    box-shadow: -1px -1px 0 #0f380f;
+}
+
+.pixel-button:active {
+    transform: translate(2px, 2px);
+    box-shadow: none;
+}
+
+.gameCanvas{
+    margin-top: -4px;
+    border: #0f380f 4px solid;
+}

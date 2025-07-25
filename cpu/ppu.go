@@ -34,6 +34,7 @@ type Ppu struct {
 	Scanline       int
 	ScalineCounter int
 	LYSHADOW       bool
+	WindowLine     int
 }
 
 func (g *Gameboy) UpdateGraphics(Mcycles int) {
@@ -80,10 +81,9 @@ func (g *Gameboy) DrawScanline(control uint8, Scaline int) {
 	if testBit(control, 0) {
 		g.RenderBackground(control, Scaline)
 	}
-
-	// if testBit(control, 1) {
-	// 	g.RenderSprite()
-	// }
+	if testBit(control, 1) {
+		g.RenderSprite()
+	}
 
 }
 
@@ -99,6 +99,10 @@ func (g *Gameboy) RenderSprite() {
 
 		index := uint16(sprite * 4)
 		yPos := g.memory.readAddr(0xFE00+index) - 16
+		xPos := g.memory.readAddr(0xFE00+index+1) - 8
+		tileNum := g.memory.readAddr(0xFE00 + index + 2)
+		attributes := g.memory.readAddr(0xFE00 + index + 3)
+
 		if yPos > g.memory.readAddr(LY) || yPos+byte(ysize) <= g.memory.readAddr(LY) {
 			continue
 		}
@@ -107,10 +111,6 @@ func (g *Gameboy) RenderSprite() {
 			break
 		}
 		linesprites++
-
-		xPos := g.memory.readAddr(0xFE00+index+1) - 8
-		tileNum := g.memory.readAddr(0xFE00 + index + 2)
-		attributes := g.memory.readAddr(0xFE00 + index + 3)
 
 		yflip := testBit(attributes, 6)
 		xflip := testBit(attributes, 5)
@@ -121,9 +121,16 @@ func (g *Gameboy) RenderSprite() {
 			line = uint16(ysize - int(line) - 1)
 		}
 
-		line *= 2
-
-		dataAddr := uint16(tileNum)*16 + 0x8000 + line
+		var dataAddr uint16
+		if ysize == 16 {
+			if line < 8 {
+				dataAddr = uint16(tileNum&0xFE)*16 + 0x8000 + line*2
+			} else {
+				dataAddr = uint16((tileNum&0xFE)+1)*16 + 0x8000 + (line-8)*2
+			}
+		} else {
+			dataAddr = uint16(tileNum)*16 + 0x8000 + line*2
+		}
 		data1 := g.memory.readAddr(dataAddr)
 		data2 := g.memory.readAddr(dataAddr + 1)
 
@@ -136,6 +143,11 @@ func (g *Gameboy) RenderSprite() {
 
 			colorNum := ((data2 >> colorbit) & 1) << 1
 			colorNum |= (data1 >> colorbit) & 1
+
+			if colorNum == 0 {
+				continue
+			}
+
 			var colorAddr uint16
 			if testBit(attributes, 4) {
 				colorAddr = 0xFF49
@@ -143,14 +155,19 @@ func (g *Gameboy) RenderSprite() {
 				colorAddr = 0xFF48
 			}
 
-			r, gr, b := g.getColor(colorNum, colorAddr)
-
-			if r == 0 && gr == 0 && b == 0 {
-				continue
-			}
+			r, gr, b, bs := g.getColor(colorNum, colorAddr)
 
 			xPix := 7 - uint8(x) + xPos
+
+			if priority {
+
+				if g.tileScanline[xPix] != 0 {
+					continue
+				}
+			}
+
 			g.SetPixel(priority, int(xPix), int(g.memory.readAddr(LY)), r, gr, b)
+			g.WebScreen[xPix][g.memory.readAddr(LY)] = bs
 
 		}
 
@@ -164,29 +181,47 @@ func (g *Gameboy) RenderBackground(control uint8, Scanline int) {
 	Windowy := g.memory.readAddr(WINDOWY)
 	Windowx := g.memory.readAddr(WINDOWX) - 7
 
-	usingWindow, Signed, tileData, backgroundMem := g.getTileSettings(control)
+	windowEnabled, Signed, tileData, _ := g.getTileSettings(control)
 
-	var yPos byte
-	if !usingWindow {
-		yPos = Scrolly + uint8(Scanline)
+	windowthisline := windowEnabled && (uint8(Scanline) >= Windowy) && (Windowx <= 166)
 
-	} else {
-		yPos = uint8(Scanline) - Windowy
+	if windowthisline {
+		if Scanline == int(Windowy) {
+			g.ppu.WindowLine = 0
+		}
 	}
-
-	tileRow := uint16(yPos/8) * 32
 
 	for x := 0; x < 160; x++ {
 		pixel := uint8(x)
 
-		xPos := pixel + Scrollx
+		usingWindow := windowEnabled && pixel >= Windowx && uint8(Scanline) >= Windowy
+
+		var xPos, yPos uint8
+		var backgroundMem uint16
 
 		if usingWindow {
-			if pixel >= Windowx {
-				xPos = pixel - Windowx
+			// Window coordinates - relative to window position
+			xPos = pixel - Windowx
+			yPos = uint8(g.ppu.WindowLine)
+			// Use window tile map
+			if testBit(control, 6) {
+				backgroundMem = 0x9C00
+			} else {
+				backgroundMem = 0x9800
+			}
+		} else {
+			// Background coordinates - with scrolling
+			xPos = pixel + Scrollx
+			yPos = Scrolly + uint8(Scanline)
+			// Use background tile map
+			if testBit(control, 3) {
+				backgroundMem = 0x9C00
+			} else {
+				backgroundMem = 0x9800
 			}
 		}
 
+		tileRow := uint16(yPos/8) * 32
 		tileCol := uint16(xPos / 8)
 		tileAddr := backgroundMem + tileRow + tileCol
 
@@ -212,13 +247,19 @@ func (g *Gameboy) RenderBackground(control uint8, Scanline int) {
 
 		g.tileScanline[x] = colorNum
 
-		r, gr, b := g.getColor(colorNum, 0xFF47)
-		g.SetPixel(false, x, int(g.memory.readAddr(LY)), r, gr, b)
+		r, gr, b, bs := g.getColor(colorNum, 0xFF47)
+
+		g.WebScreen[x][Scanline] = bs
+
+		g.SetPixel(false, x, Scanline, r, gr, b)
 	}
 
+	if windowthisline {
+		g.ppu.WindowLine++
+	}
 }
 
-func (gb *Gameboy) getColor(colorNum uint8, pallete uint16) (byte, byte, byte) {
+func (gb *Gameboy) getColor(colorNum uint8, pallete uint16) (byte, byte, byte, byte) {
 
 	palette := gb.memory.readAddr(pallete)
 
@@ -228,13 +269,35 @@ func (gb *Gameboy) getColor(colorNum uint8, pallete uint16) (byte, byte, byte) {
 	// Convert to RGB values (Game Boy grayscale)
 	switch colorIndex {
 	case 0:
-		return 255, 255, 255 // White
+		return 255, 255, 255, 0 // White
 	case 1:
-		return 192, 192, 192 // Light gray
+		return 192, 192, 192, 1 // Light gray
 	case 2:
-		return 96, 96, 96 // Dark gray
+		return 96, 96, 96, 2 // Dark gray
 	case 3:
-		return 0, 0, 0 // Black
+		return 0, 0, 0, 3 // Black
+	default:
+		fmt.Println("Invalid color index:", colorIndex)
+		return 255, 255, 255, 0 // Default to white
+	}
+}
+
+func (gb *Gameboy) getColorAlt(colorNum uint8, pallete uint16) (byte, byte, byte) {
+	palette := gb.memory.readAddr(pallete)
+
+	// Extract the 2-bit color value from the palette
+	colorIndex := (palette >> (colorNum * 2)) & 0x03
+
+	// Convert to RGB values (Game Boy grayscale)
+	switch colorIndex {
+	case 0:
+		return 255, 200, 200 // Light red/pink
+	case 1:
+		return 255, 100, 100 // Medium red
+	case 2:
+		return 200, 50, 50 // Dark red
+	case 3:
+		return 128, 0, 0 // Very dark red
 	default:
 		fmt.Println("Invalid color index:", colorIndex)
 		return 255, 255, 255 // Default to white
@@ -261,7 +324,7 @@ func (g *Gameboy) getTileSettings(control uint8) (usingWindow bool, Signed bool,
 		windowY := g.memory.readAddr(WINDOWY)
 		currentLine := g.memory.readAddr(LY)
 
-		// Window is active if current scanline >= window Y position
+		// Window is potentially active if current scanline >= window Y position
 		if currentLine >= windowY {
 			usingWindow = true
 		}
@@ -273,21 +336,6 @@ func (g *Gameboy) getTileSettings(control uint8) (usingWindow bool, Signed bool,
 		tileData = 0x9000
 		Signed = true
 	}
-
-	if usingWindow {
-		if testBit(control, 6) {
-			backgroundMem = 0x9C00
-		} else {
-			backgroundMem = 0x9800
-		}
-	} else {
-		if testBit(control, 3) {
-			backgroundMem = 0x9C00
-		} else {
-			backgroundMem = 0x9800
-		}
-	}
-
 	return usingWindow, Signed, tileData, backgroundMem
 }
 

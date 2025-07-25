@@ -5,8 +5,6 @@ import (
 	"log"
 	"os"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 const (
@@ -20,6 +18,7 @@ type Gameboy struct {
 	memory Memory
 
 	Screen       [160][144][3]byte
+	WebScreen    [160][144]byte
 	tileScanline [160]uint8
 
 	clock   Clock
@@ -29,7 +28,7 @@ type Gameboy struct {
 	halted  bool
 	haltbug bool
 
-	Soc *websocket.Conn
+	ViewerChan chan [160][144]byte
 }
 
 func (g *Gameboy) ReadAddr(Addr uint16) uint8 {
@@ -48,14 +47,14 @@ type Clock struct {
 	totalTcycles int
 }
 
-func GBInit(conn *websocket.Conn) *Gameboy {
+func GBInit(viewerChan chan [160][144]byte) *Gameboy {
 	gb := &Gameboy{
-		cpu:     &Cpu{},
-		memory:  Memory{mem: make([]byte, 65536)},
-		clock:   Clock{},
-		halted:  false,
-		haltbug: false,
-		Soc:     conn,
+		cpu:        &Cpu{},
+		memory:     Memory{mem: make([]byte, 65536)},
+		clock:      Clock{},
+		halted:     false,
+		haltbug:    false,
+		ViewerChan: viewerChan,
 	}
 
 	gb.memory.Init(65536)
@@ -68,13 +67,14 @@ func GBInit(conn *websocket.Conn) *Gameboy {
 	return gb
 }
 
-func GBInitDebug() *Gameboy {
+func GBInitDebug(viewerChan chan [160][144]byte) *Gameboy {
 	gb := &Gameboy{
-		cpu:     &Cpu{},
-		memory:  Memory{mem: make([]byte, 65536)},
-		clock:   Clock{},
-		halted:  false,
-		haltbug: false,
+		cpu:        &Cpu{},
+		memory:     Memory{mem: make([]byte, 65536)},
+		clock:      Clock{},
+		halted:     false,
+		haltbug:    false,
+		ViewerChan: viewerChan,
 	}
 
 	// logFile, err := os.OpenFile("gbabot.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
@@ -199,6 +199,7 @@ func (g *Gameboy) Start(done chan bool, manual chan bool) {
 				frame = 0
 			}
 		case <-ticker.C:
+			fmt.Println("Frame:", frame)
 			g.clock.totalTcycles += TCYCLES_PER_FRAME
 			g.clock.totalMcycles += MCYCLES_PER_FRAME
 
@@ -211,49 +212,9 @@ func (g *Gameboy) Start(done chan bool, manual chan bool) {
 				i -= cycles
 			}
 
-			g.StreamScreen()
+			g.ViewerChan <- g.WebScreen
 
 		}
 	}
-
-}
-
-func (g *Gameboy) StreamScreen() {
-	if g.Soc == nil {
-		// fmt.Println("WebSocket connection is not initialized.")
-		return
-	}
-
-	data := g.getPixelData()
-	if err := g.Soc.WriteJSON(data); err != nil {
-		log.Println("Error sending pixel data:", err)
-	}
-}
-
-type PixelData struct {
-	Height int    `json:"height"`
-	Width  int    `json:"width"`
-	Pixels []byte `json:"pixels"`
-}
-
-func (g *Gameboy) getPixelData() PixelData {
-	pixels := make([]byte, 160*144*3) // 160x144 pixels, 3 bytes per pixel (RGB)
-	// fmt.Println(g.Screen)
-	for y := 0; y < 144; y++ {
-		for x := 0; x < 160; x++ {
-			index := (y*160 + x) * 3
-			pixels[index] = g.Screen[x][y][0]
-			pixels[index+1] = g.Screen[x][y][1]
-			pixels[index+2] = g.Screen[x][y][2]
-		}
-	}
-
-	data := PixelData{
-		Height: 144,
-		Width:  160,
-		Pixels: pixels,
-	}
-
-	return data
 
 }
