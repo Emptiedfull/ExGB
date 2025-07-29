@@ -8,6 +8,8 @@ type Memory struct {
 	timerCounter  uint16
 	timerFreq     uint16
 	timeroverflow bool
+
+	joypadState uint8
 }
 
 const (
@@ -81,6 +83,10 @@ func (m *Memory) readAddr(Addr uint16) uint8 {
 		fmt.Println("Memory read out of bounds at address:", Addr, len(m.mem))
 		return 0
 	}
+	if Addr == 0xFF00 {
+
+		return m.getJoyPadState()
+	}
 
 	return m.mem[Addr]
 
@@ -89,6 +95,11 @@ func (m *Memory) readAddr(Addr uint16) uint8 {
 func (m *Memory) writeAddr(Addr uint16, val uint8) {
 	if int(Addr) >= len(m.mem) {
 		fmt.Println("Memory write out of bounds at address:", Addr)
+		return
+	}
+
+	if Addr <= 0x7FFF {
+		// Optionally log or ignore silently
 		return
 	}
 
@@ -119,6 +130,21 @@ func (m *Memory) writeAddr(Addr uint16, val uint8) {
 		return
 	case 0xFF46: // OAM DMA
 		m.DMA(val)
+	case 0xFF00: // Joypad
+
+		m.mem[0xFF00] = val
+
+		selectedGroup := val & 0x30
+		var groupState uint8
+		if selectedGroup&0x10 == 0 {
+			groupState = (m.joypadState >> 4) & 0x0F
+		} else if selectedGroup&0x20 == 0 {
+			groupState = m.joypadState & 0x0F
+		}
+		if groupState != 0x0F {
+			m.EFSet(INTERRUPT_FLAG_JOYPAD)
+		}
+		return
 	default:
 		m.mem[Addr] = val
 	}
@@ -145,6 +171,7 @@ func (m *Memory) EIGet(mask INTERRUPT_ENABLE_MASK) bool {
 }
 
 func (m *Memory) EFSet(mask INTERRUPT_FLAG_MASK) {
+
 	m.writeAddr(INTERRUPT_FLAG, m.readAddr(INTERRUPT_FLAG)|uint8(mask))
 }
 

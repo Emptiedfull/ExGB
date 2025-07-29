@@ -2,9 +2,6 @@ package cpu
 
 import (
 	"fmt"
-	"image/color"
-
-	"github.com/hajimehoshi/ebiten"
 )
 
 const (
@@ -53,10 +50,6 @@ func (g *Gameboy) UpdateGraphics(Mcycles int) {
 
 		line := g.memory.readAddr(LY)
 		g.SetLcdStatus(int(line))
-		// fmt.Println("Updating scanline", line, "LYC", g.memory.readAddr(LYC), "LYSHADOW", g.ppu.LYSHADOW)
-
-		// fmt.Println("Updating scanline", line)
-
 		g.ppu.ScalineCounter += SCANLINECYCLES
 
 		if line == 144 {
@@ -155,7 +148,7 @@ func (g *Gameboy) RenderSprite() {
 				colorAddr = 0xFF48
 			}
 
-			r, gr, b, bs := g.getColor(colorNum, colorAddr)
+			_, _, _, bs := g.getColor(colorNum, colorAddr)
 
 			xPix := 7 - uint8(x) + xPos
 
@@ -166,8 +159,7 @@ func (g *Gameboy) RenderSprite() {
 				}
 			}
 
-			g.SetPixel(priority, int(xPix), int(g.memory.readAddr(LY)), r, gr, b)
-			g.WebScreen[xPix][g.memory.readAddr(LY)] = bs
+			g.SetPixel(priority, int(xPix), int(g.memory.readAddr(LY)), bs)
 
 		}
 
@@ -247,11 +239,9 @@ func (g *Gameboy) RenderBackground(control uint8, Scanline int) {
 
 		g.tileScanline[x] = colorNum
 
-		r, gr, b, bs := g.getColor(colorNum, 0xFF47)
+		_, _, _, bs := g.getColor(colorNum, 0xFF47)
 
-		g.WebScreen[x][Scanline] = bs
-
-		g.SetPixel(false, x, Scanline, r, gr, b)
+		g.SetPixel(false, x, Scanline, bs)
 	}
 
 	if windowthisline {
@@ -282,33 +272,9 @@ func (gb *Gameboy) getColor(colorNum uint8, pallete uint16) (byte, byte, byte, b
 	}
 }
 
-func (gb *Gameboy) getColorAlt(colorNum uint8, pallete uint16) (byte, byte, byte) {
-	palette := gb.memory.readAddr(pallete)
-
-	// Extract the 2-bit color value from the palette
-	colorIndex := (palette >> (colorNum * 2)) & 0x03
-
-	// Convert to RGB values (Game Boy grayscale)
-	switch colorIndex {
-	case 0:
-		return 255, 200, 200 // Light red/pink
-	case 1:
-		return 255, 100, 100 // Medium red
-	case 2:
-		return 200, 50, 50 // Dark red
-	case 3:
-		return 128, 0, 0 // Very dark red
-	default:
-		fmt.Println("Invalid color index:", colorIndex)
-		return 255, 255, 255 // Default to white
-	}
-}
-
-func (gb *Gameboy) SetPixel(priority bool, x int, y int, r, g, b byte) {
+func (gb *Gameboy) SetPixel(priority bool, x int, y int, bs byte) {
 	if x >= 0 && x < 160 && y >= 0 && y < 144 {
-		gb.Screen[x][y][0] = r
-		gb.Screen[x][y][1] = g
-		gb.Screen[x][y][2] = b
+		gb.WebScreen[x][y] = bs
 	}
 
 }
@@ -351,7 +317,8 @@ func (g *Gameboy) SetLcdStatus(Scanline int) {
 		g.ppu.Scanline = 0
 		g.ppu.ScalineCounter = SCANLINECYCLES
 		g.memory.mem[LY] = 0
-		newStatus |= 0x01
+		newStatus &= 0xFC
+		newStatus |= 0x00
 		g.memory.writeAddr(LCDS, newStatus)
 
 		return
@@ -406,18 +373,4 @@ func (g *Gameboy) SetLcdStatus(Scanline int) {
 
 func testBit(status uint8, bit int) bool {
 	return (status & (1 << bit)) != 0
-}
-
-func (g *Gameboy) Draw(screen *ebiten.Image) {
-	if screen == nil {
-		return
-	}
-	for y := 0; y < 144; y++ {
-		for x := 0; x < 160; x++ {
-			r, gColor, b := g.Screen[x][y][0], g.Screen[x][y][1], g.Screen[x][y][2]
-			c := color.RGBA{r, gColor, b, 255}
-			screen.Set(x, y, c)
-		}
-
-	}
 }

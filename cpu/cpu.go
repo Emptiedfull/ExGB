@@ -280,7 +280,6 @@ func (g *Gameboy) handleInterrupt() {
 	interrupts := IE & IF
 
 	if interrupts&0x01 != 0 { // V-Blank
-		fmt.Println("Handling V-Blank interrupt")
 		g.memory.writeAddr(INTERRUPT_FLAG, IF&^0x01)
 		g.serviceInterrupt(0x40)
 	} else if interrupts&0x02 != 0 { // LCD STAT

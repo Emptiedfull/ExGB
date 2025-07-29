@@ -2,8 +2,6 @@ package cpu
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"time"
 )
 
@@ -18,20 +16,25 @@ type Gameboy struct {
 	memory Memory
 
 	Screen       [160][144][3]byte
+	OldScreen    [160][144]byte
 	WebScreen    [160][144]byte
 	tileScanline [160]uint8
 
 	clock   Clock
-	logger  *log.Logger
-	logFile *os.File
-
 	halted  bool
 	haltbug bool
 
-	ViewerChan chan [160][144]byte
+	ViewerChan  chan [160][144]byte
+	ControlChan chan JoypadUpdate
+}
+
+type JoypadUpdate struct {
+	Pressed bool `json:"pressed"`
+	Key     int  `json:"key"`
 }
 
 func (g *Gameboy) ReadAddr(Addr uint16) uint8 {
+
 	return g.memory.readAddr(Addr)
 }
 func (g *Gameboy) WriteAddr(Addr uint16, val uint8) {
@@ -47,14 +50,15 @@ type Clock struct {
 	totalTcycles int
 }
 
-func GBInit(viewerChan chan [160][144]byte) *Gameboy {
+func GBInit(viewerChan chan [160][144]byte, controlChan chan JoypadUpdate) *Gameboy {
 	gb := &Gameboy{
-		cpu:        &Cpu{},
-		memory:     Memory{mem: make([]byte, 65536)},
-		clock:      Clock{},
-		halted:     false,
-		haltbug:    false,
-		ViewerChan: viewerChan,
+		cpu:         &Cpu{},
+		memory:      Memory{mem: make([]byte, 65536)},
+		clock:       Clock{},
+		halted:      false,
+		haltbug:     false,
+		ViewerChan:  viewerChan,
+		ControlChan: controlChan,
 	}
 
 	gb.memory.Init(65536)
@@ -67,14 +71,15 @@ func GBInit(viewerChan chan [160][144]byte) *Gameboy {
 	return gb
 }
 
-func GBInitDebug(viewerChan chan [160][144]byte) *Gameboy {
+func GBInitDebug(viewerChan chan [160][144]byte, controlChan chan JoypadUpdate) *Gameboy {
 	gb := &Gameboy{
-		cpu:        &Cpu{},
-		memory:     Memory{mem: make([]byte, 65536)},
-		clock:      Clock{},
-		halted:     false,
-		haltbug:    false,
-		ViewerChan: viewerChan,
+		cpu:         &Cpu{},
+		memory:      Memory{mem: make([]byte, 65536)},
+		clock:       Clock{},
+		halted:      false,
+		haltbug:     false,
+		ViewerChan:  viewerChan,
+		ControlChan: controlChan,
 	}
 
 	// logFile, err := os.OpenFile("gbabot.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
@@ -92,11 +97,15 @@ func GBInitDebug(viewerChan chan [160][144]byte) *Gameboy {
 
 	gb.cpu.pc = 0x0100
 
+	gb.memory.joypadState = 255 // Initial joypad state
+
 	// Initialize the PPU
 	gb.ppu = &Ppu{
 		Scanline:       0,
 		ScalineCounter: 0,
 	}
+
+	go gb.controlHandler()
 
 	return gb
 
@@ -115,6 +124,7 @@ func (g *Gameboy) SetPostBootState() {
 	g.cpu.registers.sp = 0xFFFE
 	g.cpu.pc = 0x0100
 
+	g.WriteAddr(0xFF00, 0xCF) // Joypad state
 	g.WriteAddr(0xFF05, 0x00) // TIMA
 	g.WriteAddr(0xFF06, 0x00) // TMA
 	g.WriteAddr(0xFF07, 0x00) // TAC
@@ -170,13 +180,12 @@ func (g *Gameboy) Start(done chan bool, manual chan bool) {
 	g.clock.totalMcycles = 0
 	g.clock.totalTcycles = 0
 
-	ticker := time.NewTicker(time.Second / 6)
+	ticker := time.NewTicker(time.Second / 60)
 
 	if manual != nil {
 		ticker.Stop()
 	}
 
-	g.memory.writeAddr(LCDC, 0x91) // Enable LCD, set mode to 0, enable sprites, enable background
 	frame := 0
 	for {
 		select {
@@ -199,7 +208,8 @@ func (g *Gameboy) Start(done chan bool, manual chan bool) {
 				frame = 0
 			}
 		case <-ticker.C:
-			fmt.Println("Frame:", frame)
+
+			frame++
 			g.clock.totalTcycles += TCYCLES_PER_FRAME
 			g.clock.totalMcycles += MCYCLES_PER_FRAME
 
@@ -212,7 +222,10 @@ func (g *Gameboy) Start(done chan bool, manual chan bool) {
 				i -= cycles
 			}
 
-			g.ViewerChan <- g.WebScreen
+			if g.OldScreen != g.WebScreen {
+				g.OldScreen = g.WebScreen
+				g.ViewerChan <- g.WebScreen
+			}
 
 		}
 	}

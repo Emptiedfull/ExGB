@@ -1,5 +1,7 @@
 package cpu
 
+import "fmt"
+
 type OpCode struct {
 	MCycles int
 	Execute func(g *Gameboy)
@@ -52,6 +54,7 @@ func (g *Gameboy) initOpcodes() map[uint8]OpCode {
 			g.RRCA()
 		}}, 0x10: {MCycles: 1, Execute: func(g *Gameboy) {
 			g.fetch()
+			fmt.Println("STOP executed")
 			//STOP IDK WHAT TO DO HEREs
 		}}, 0x11: {MCycles: 3, Execute: func(g *Gameboy) {
 			g.Load16r16n(DE, g.fetch16())
