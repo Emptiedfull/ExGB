@@ -1,10 +1,10 @@
 const { animate, scroll } = Motion
 
 const pallete = {
-    0: "#9bbc0f",
-    1: "#8bac0f",
-    2: "#306230",
-    3: "#0f380f",
+    0: [155, 188, 15],   // "#9bbc0f"
+    1: [139, 172, 15],   // "#8bac0f"
+    2: [48, 98, 48],     // "#306230"
+    3: [15, 56, 15],     // "#0f380f"
 }
 
 var modeDivs = {}
@@ -16,6 +16,14 @@ var rompath = null
 
 var controlSoc = null
 
+
+var gameCanvas = null
+var ctx = null
+var Imagedata = null
+var buf = null
+
+const worker = new Worker('static/scripts/pixelworker.js')
+
 document.addEventListener('DOMContentLoaded', async () => {
 
     modeDivs = {
@@ -24,6 +32,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         "rom-selection": document.querySelector('.rom-selection'),
         "play": document.querySelector('.play'),
         "link": document.querySelector('.link'),
+    }
+
+    gameCanvas = document.querySelector('.gameCanvas')
+    if (gameCanvas) {
+        ctx = gameCanvas.getContext('2d')
+        Imagedata = ctx.createImageData(160, 144)
+        buf = Imagedata.data
     }
 
     menuControls = document.querySelectorAll('.menu-control')
@@ -48,20 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         })
     })
 
-    codeInput = document.getElementById('serverInput')
-    connectButton = document.getElementById('connectButton')
 
-    connectButton.addEventListener('click', () => {
-        const serverCode = codeInput.value.trim()
-        if (serverCode.length === 5) {
-            mode = "spectator"
-            GameId = serverCode
-            handleModeChange()
-            
-        } else {
-            console.error("Invalid server code. Please enter a 5-character code.")
-        }
-    })
 })
 
 
@@ -75,13 +77,19 @@ function handleModeChange() {
         }
     })
 
-    
+
 
     switch (mode) {
+        case "home":
+            if (modeDivs.home) {
+                modeDivs.home.style.display = "flex"
+            }
+
+            break
         case "spectator":
-              modeDivs.game.style.display = "flex"
-              startStream()
-              break
+            modeDivs.game.style.display = "flex"
+            startStream()
+            break
         case "play":
             if (modeDivs.play) {
                 modeDivs.play.style.display = "flex"
@@ -90,12 +98,70 @@ function handleModeChange() {
                 playButton.addEventListener('click', () => {
                     startNewGame()
                 })
+
+                serverCountElement = document.getElementById('serverCount')
+                serverErrorElement = modeDivs.play.querySelector('.play-error')
+
+                fetch('http://localhost:8080/servers/count')
+                    .then(response => response.text())
+                    .then(count => {
+                        serverCountElement.textContent = count
+                        if (parseInt(count) > 0) {
+                            modeDivs.play.querySelector('.play-error').style.display = 'none'
+                        } else {
+                            serverErrorElement.textContent = "All Servers Busy"
+                            modeDivs.play.querySelector('.play-error').style.display = 'block'
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Error fetching server count:", error)
+                        serverCountElement.textContent = "0"
+                        serverErrorElement.textContent = "Error connecting to server, Pls inform admin"
+                        modeDivs.play.querySelector('.play-error').style.display = 'block'
+                    }
+                    )
             }
             break
         case "link":
             if (modeDivs.link) {
                 modeDivs.link.style.display = "flex"
+
+                console.log("Link mode activated")
+
+                codeInput = document.getElementById('serverInput')
+                connectButton = document.getElementById('connectButton')
+
+                connectButton.addEventListener('click', () => {
+                    const serverCode = codeInput.value.trim()
+                    if (serverCode.length === 5) {
+                        mode = "spectator"
+                        GameId = serverCode
+
+                        console.log("Connecting to server with code:", GameId)
+
+                        fetch(`http://localhost:8080/servers/status/${GameId}`).then(response => {
+                            if (!response.ok) {
+                                linkError = modeDivs.link.querySelector('.link-error')
+                                linkError.textContent = "Invalid server code"
+
+                            } else {
+                                handleModeChange()
+                            }
+                        }
+                        ).catch(error => {
+                            console.error("Error connecting to server:", error)
+                            linkError = modeDivs.link.querySelector('.link-error')
+                            linkError.textContent = "Error connecting to server, Pls inform admin"
+                        })
+
+
+                    } else {
+                        console.error("Invalid server code. Please enter a 5-character code.")
+                    }
+                })
             }
+
+
             break
         case "game":
             if (modeDivs.game) {
@@ -169,6 +235,7 @@ function startStream() {
 
     soc.onmessage = async (event) => {
         if (event.data instanceof Blob) {
+
             const arrayBuffer = await event.data.arrayBuffer()
             const byteArray = new Uint8Array(arrayBuffer)
             UpdateCanvas(byteArray)
@@ -212,7 +279,7 @@ function HandleKeyUp(event, soc) {
             "pressed": false,
             "key": key,
         }))
-        console.log("Key released:", event.key, "Mapped to:", key)
+
     } else {
         console.log("Unknown key released:", event.key)
         return
@@ -228,9 +295,9 @@ function HandleKeyDown(event, soc) {
             "pressed": true,
             "key": key,
         }))
-        console.log("Key pressed:", event.key, "Mapped to:", key)
+        
     } else {
-        console.log("Unknown key pressed:", event.key)
+        
         return
     }
 
@@ -265,10 +332,6 @@ function startNewGame() {
     controlSoc.onclose = function (event) {
         console.log('Game controller disconnected');
         resetControlHandler()
-        setTimeout(() => {
-            console.log('Attempting to reconnect...');
-            startNewGame();
-        }, 3000);
     };
 
     controlSoc.onerror = (error) => {
@@ -277,33 +340,12 @@ function startNewGame() {
 }
 
 
-const UpdateCanvas = (data) => {
-    gameCanvas = document.querySelector('.gameCanvas')
-    ctx = gameCanvas.getContext('2d')
-
-
-
-    gameCanvas.width = width * pixelSize
-    gameCanvas.height = height * pixelSize
-
-    let byteIndex = 0
-
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            if (byteIndex < data.length) {
-                // Get 2-bit pixel value (0, 1, 2, 3)
-                const pixelValue = data[byteIndex] & 0x3
-
-                // Set color from palette
-                ctx.fillStyle = pallete[pixelValue]
-
-                // Draw scaled pixel
-                ctx.fillRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize)
-
-                byteIndex++
-            }
-        }
-    }
+function UpdateCanvas(data) {
+    worker.postMessage({ data, width, height, pallete })
 }
 
-
+worker.onmessage = function(e) {
+    buf = e.data
+    Imagedata.data.set(new Uint8ClampedArray(buf))
+    ctx.putImageData(Imagedata, 0, 0)
+}

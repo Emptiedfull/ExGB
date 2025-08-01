@@ -68,12 +68,127 @@ body {
 }
 
 .menu-cont{
-    height: 60%;
-    width: 70%;
+    height: 70%;
+    width: 80%;
 
     display: flex;
     flex-direction: row;
      animation: menu-glitch 4s infinite
+}
+
+.home{
+    height: 100%;
+    
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    padding-top: 3rem;
+
+
+}
+
+.home-subtitle{
+    width: 100%;
+    font-size: 0.6rem;
+    color: #0f380f;
+    text-shadow: 1px 1px 0 rgba(15, 56, 15, 0.3);
+    image-rendering: pixelated;
+    letter-spacing: 1px;
+    text-align: center;
+}
+
+.home-content{
+     flex: 1 1 auto;
+    min-height: 0;
+    margin-top: 1.6rem;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.home-text{
+    
+    font-size: 0.8rem;
+    margin-top: 1rem;
+    width: 60%;
+    color: #0f380f;
+    line-height: 1.6;
+
+    
+}
+
+.home-text-alt{
+    color: #2977F5;
+    font-size: 1rem;
+}
+
+.home-updatelog {
+    width: 35%;
+    height: 90%;
+    background: #d8f8c2;
+    border: 3px solid #0f380f;
+    border-radius: 6px;
+    padding-left: 0.4rem;
+    box-shadow:
+        inset 2px 2px 0 #ffffff,
+        0 2px 0 #557c44,
+        0 4px 0 #306230;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.75rem;
+    color: #0f380f;
+    margin-left: 1rem;
+    overflow-y: auto;
+    overflow-x: hidden;
+    image-rendering: pixelated;
+    white-space: pre-line;
+    letter-spacing: 1px;
+    background-image: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 8px,
+        rgba(15,56,15,0.07) 9px,
+        transparent 12px
+    );
+
+    scrollbar-width: thin;
+    scrollbar-color: #8bac0f #c2e59c;
+}
+
+.home-updatelog ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.home-updatelog h3{
+    text-align: center;
+}
+
+.home-updatelog li {
+    background: #c2e59c;
+    margin-bottom: 0.7em;
+    padding: 0.5em 1em 0.5em 2em;
+    border-radius: 4px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.85em;
+    color: #0f380f;
+    position: relative;
+    box-shadow: 0 2px 0 #a3c86d, 0 4px 8px rgba(15,56,15,0.08);
+    letter-spacing: 1px;
+    line-height: 1.2;
+}
+
+.home-updatelog li::before {
+    content: "•";
+    position: absolute;
+    left: 0.8em;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #0f380f;
+    font-size: 1.2em;
+    font-family: 'Press Start 2P', monospace;
 }
 
 @keyframes button-subtle-glitch {
@@ -183,6 +298,10 @@ body {
     margin-left:5px;
     position: relative;
 
+     display: flex;
+    flex-direction: column;
+    height: 100%;
+
 }
 
 .roms{
@@ -267,6 +386,19 @@ body {
     transition: all 0.05s;
 }
 
+.error {
+    color: #ff0000; /* Bright red for error */
+    font-size: 1.2rem;
+    text-align: center;
+    margin-top: 20px;
+    animation: blink 0.8s infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
 @keyframes menu-glitch {
     0%, 85%, 100% {
         transform: translate(0);
@@ -331,7 +463,7 @@ body {
 }
 
 .title {
-    font-size: 5em;
+    font-size: 3.7em;
     color: #2977F5; /* Changed to Game Boy dark green */
     text-align: center;
     margin-bottom: 20px;
@@ -367,7 +499,7 @@ body {
 }
 
 .title span:hover {
-    transform: translateY(-10px) scale(1.1);
+    transform: translateY(-8px) scale(1.1);
     filter:brightness(1.2);
     z-index: 10;
     position: relative;

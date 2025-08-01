@@ -65,6 +65,44 @@ func setUpHttpServer(store *GameStore) {
 		w.Write([]byte("Welcome to ExGB - GameBoy Emulator!"))
 	})
 
+	http.HandleFunc("/servers/count", func(w http.ResponseWriter, r *http.Request) {
+
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		store.RLock()
+		count := 10 - len(store.Games)
+		store.RUnlock()
+		fmt.Println("Received request for server count", count)
+		w.Write([]byte(fmt.Sprintf("%d", count)))
+	})
+
+	http.HandleFunc("/server/check", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		id := r.URL.Query().Get("id")
+		if id == "" || len(id) != 5 {
+			http.Error(w, "Game ID is required", http.StatusBadRequest)
+			fmt.Println("Invalid game ID:", id)
+			return
+		}
+
+		store.RLock()
+		game := store.Games[id]
+		store.RUnlock()
+
+		if game == nil {
+			http.Error(w, "Game not found", http.StatusNotFound)
+			fmt.Println("Game not found for ID:", id)
+			return
+		}
+
+		w.Write([]byte("Game is active"))
+	})
+
 	http.HandleFunc("/ws/start", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -113,7 +151,9 @@ func createGame(user *websocket.Conn, store *GameStore) {
 	roms := map[string]string{
 		"acid":   "./cpu/individual/acid.gb",
 		"tetris": "./tet.gb",
-		"sumar":  "./mar.gb",
+		"sumar":  "./sumar.gb",
+		"pok":    "./pok2.gb",
+		"mar":    "./mar.gb",
 	}
 
 	store.Lock()
@@ -194,15 +234,26 @@ func createGame(user *websocket.Conn, store *GameStore) {
 
 }
 
+func PackFrameBuffer(screen [160][144]byte) []byte {
+	out := make([]byte, 160*144/4)
+	i := 0
+	for y := 0; y < 144; y++ {
+		for x := 0; x < 160; x += 4 {
+			var b byte
+			b |= (screen[x][y] & 0x03) << 6
+			b |= (screen[x+1][y] & 0x03) << 4
+			b |= (screen[x+2][y] & 0x03) << 2
+			b |= (screen[x+3][y] & 0x03)
+			out[i] = b
+			i++
+		}
+	}
+	return out
+}
+
 func UpdateScreen(g *Game) {
 	for screen := range g.Viewer_chan {
-		flatBytes := make([]byte, 0, 160*144)
-
-		for y := range 144 {
-			for x := range 160 {
-				flatBytes = append(flatBytes, screen[x][y])
-			}
-		}
+		flatBytes := PackFrameBuffer(screen)
 
 		activeViewers := g.Viewers[:0]
 		for _, viewer := range g.Viewers {

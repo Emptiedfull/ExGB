@@ -1,35 +1,67 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8" />
     <title>ExGb Lobby</title>
-    <link rel="stylesheet" href="static/styles/index.css?v=9.0" />
+    <link rel="stylesheet" href="static/styles/index.css?v=90.0" />
     <script src="https://cdn.jsdelivr.net/npm/motion@latest/dist/motion.js"></script>
-   
+
 
 </head>
+
 <body>
     <div class="content">
-        <h1 class="title">
-            <span>E</span><span>x</span><span>G</span><span>B</span>
-        </h1>
-        
+
+
 
         <div class="menu-cont">
             <div class="menu-controls">
-                <div class="menu-control" data-mode="home"> HOME</div>
+                <div class="menu-control active" data-mode="home"> HOME</div>
                 <div class="menu-control" data-mode="play"> PLAY </div>
                 <div class="menu-control"> GEAR </div>
                 <div class="menu-control" data-mode="link"> LINK </div>
             </div>
 
+
+
             <div class="menu">
+                <div class="home">
+                    <h1 class="title">
+                        <span>E</span><span>x</span><span>G</span><span>B</span>
+                    </h1>
+                    <h2 class="home-subtitle">
+                        @2025 NOT NINTENDO
+                    </h2>
+                    <div class="home-content">
+                        <div class="home-text">
+                            <span class="home-text-alt">PLAY:</span>Play from a variety of Gameboy ROMs.
+                            <br />
+                            <br />
+                            <span class="home-text-alt">GEAR:</span>Configure your gameboy experience.
+                            <br />
+                            <br/>
+                            <span class="home-text-alt">LINK:</span>Spectate a game in progress.
+                        </div>
+                        <div class="home-updatelog">
+                            <h3>Update Log</h3>
+                            <ul>
+                                <li>Added new ROMs</li>
+                                <li>Improved server connection stability</li>
+                                <li>Fixed various bugs</li>
+                                <li>Updated UI for better user experience</li>
+                            </ul>
+                        </div>
+
+                    </div>
+                </div>
 
                 <div class="play" style="display: none;">
                     <h1 class="retro-title">
                         PLAY
                     </h1>
                     <div class="play-content">
+                        <span class="play-error error" style="display:none;"></span>
                         <span class="play-content-text">AVAILABLE SERVERS: <span id="serverCount">0</span></span>
                         <button id="playButton" class="play-button">REQUEST GAMEBOY</button>
                     </div>
@@ -41,25 +73,27 @@
                     <div class="roms-list">
                         <img src="static/images/roms/rom1.png" alt="ROM 1" class="rom-item" data-rom="sumar">
                         <img src="static/images/roms/rom2.png" alt="ROM 2" class="rom-item" data-rom="tetris">
-                        <img src="static/images/roms/rom3.png" alt="ROM 3" class="rom-item" data-rom="rom3">
-                        <img src="static/images/roms/rom1.png" alt="ROM 4" class="rom-item" data-rom="rom4">
+                        <img src="static/images/roms/rom3.png" alt="ROM 3" class="rom-item" data-rom="pok">
+                        <img src="static/images/roms/rom1.png" alt="ROM 4" class="rom-item" data-rom="mar">
                         <img src="static/images/roms/rom2.png" alt="ROM 5" class="rom-item" data-rom="rom5">
                         <img src="static/images/roms/rom3.png" alt="ROM 6" class="rom-item" data-rom="rom6">
                     </div>
 
                 </div>
 
-                <div class="link">
+                <div class="link" style="display: none;">
                     <h1 class="retro-title">
                         LINK
                     </h1>
                     <div class="link-content">
+                        <span class="link-error error"></span>
                         <span class="link-content-text">Spectate game</span>
-                       <div class="link-input-wrap">
-    <input class="link-input" type="text" id="serverInput" maxlength="5" pattern=".{5,}" required autocomplete="off" />
-</div>
+                        <div class="link-input-wrap">
+                            <input class="link-input" type="text" id="serverInput" maxlength="5" pattern=".{5,}"
+                                required autocomplete="off" />
+                        </div>
                         <button id="connectButton" class="link-button">CONNECT</button>
-                    </div>  
+                    </div>
                 </div>
 
 
@@ -74,9 +108,10 @@
 
             </div>
 
-            
+
         </div>
-    </div>   
+    </div>
 </body>
-<script src="static/scripts/index.js?v=19"></script>
-</html>   
+<script src="static/scripts/index.js?v=279"></script>
+
+</html>

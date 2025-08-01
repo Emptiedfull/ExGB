@@ -39,17 +39,19 @@ func (g *Gameboy) UpdateGraphics(Mcycles int) {
 	Cycles := Mcycles * 4
 
 	if !g.lcdstatus() {
+		g.SetLcdStatus(0)
 		return
 	}
 
 	g.ppu.ScalineCounter -= Cycles
 
 	if g.ppu.ScalineCounter <= 0 {
-
 		g.memory.mem[LY]++
-
 		line := g.memory.readAddr(LY)
 		g.SetLcdStatus(int(line))
+
+		line = g.memory.readAddr(LY)
+
 		g.ppu.ScalineCounter += SCANLINECYCLES
 
 		if line == 144 {
@@ -152,6 +154,10 @@ func (g *Gameboy) RenderSprite() {
 
 			xPix := 7 - uint8(x) + xPos
 
+			if xPix >= 160 {
+				continue
+			}
+
 			if priority {
 
 				if g.tileScanline[xPix] != 0 {
@@ -170,8 +176,9 @@ func (g *Gameboy) RenderSprite() {
 func (g *Gameboy) RenderBackground(control uint8, Scanline int) {
 	Scrolly := g.memory.readAddr(SCROLLY)
 	Scrollx := g.memory.readAddr(SCROLLX)
+
 	Windowy := g.memory.readAddr(WINDOWY)
-	Windowx := g.memory.readAddr(WINDOWX) - 7
+	Windowx := uint8(int(g.memory.readAddr(WINDOWX)) - 7)
 
 	windowEnabled, Signed, tileData, _ := g.getTileSettings(control)
 
@@ -192,10 +199,9 @@ func (g *Gameboy) RenderBackground(control uint8, Scanline int) {
 		var backgroundMem uint16
 
 		if usingWindow {
-			// Window coordinates - relative to window position
+
 			xPos = pixel - Windowx
 			yPos = uint8(g.ppu.WindowLine)
-			// Use window tile map
 			if testBit(control, 6) {
 				backgroundMem = 0x9C00
 			} else {
@@ -351,6 +357,7 @@ func (g *Gameboy) SetLcdStatus(Scanline int) {
 	}
 
 	if reqInterrupt && currentMode != (newStatus&0x03) {
+
 		g.memory.EFSet(INTERRUPT_FLAG_LCD)
 	}
 
@@ -362,6 +369,7 @@ func (g *Gameboy) SetLcdStatus(Scanline int) {
 
 	if testBit(status, 6) && (newStatus&0x04) != 0 {
 		if !g.ppu.LYSHADOW {
+
 			g.memory.EFSet(INTERRUPT_FLAG_LCD)
 			g.ppu.LYSHADOW = true
 		}

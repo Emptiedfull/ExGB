@@ -261,11 +261,14 @@ func (g *Gameboy) DebugStep() int {
 	if g.haltbug {
 		g.cpu.pc--
 		g.haltbug = false
-		fmt.Println("Halt bug detected, stepping back")
-		// g.UpdateClock(1)
 		return 1
 	}
 	opCode := opcodes[code]
+
+	if opCode.Execute == nil {
+		fmt.Println(opCode, code)
+		return 1
+	}
 
 	opCode.Execute(g)
 	// g.UpdateClock(opCode.MCycles)
