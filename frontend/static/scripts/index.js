@@ -35,11 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     gameCanvas = document.querySelector('.gameCanvas')
-    if (gameCanvas) {
-        ctx = gameCanvas.getContext('2d')
-        Imagedata = ctx.createImageData(160, 144)
-        buf = Imagedata.data
-    }
 
     menuControls = document.querySelectorAll('.menu-control')
     menuControls.forEach(control => {
@@ -339,13 +334,7 @@ function startNewGame() {
     }
 }
 
-
 function UpdateCanvas(data) {
-    worker.postMessage({ data, width, height, pallete })
-}
+     renderFrame(data);
 
-worker.onmessage = function(e) {
-    buf = e.data
-    Imagedata.data.set(new Uint8ClampedArray(buf))
-    ctx.putImageData(Imagedata, 0, 0)
 }
