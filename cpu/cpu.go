@@ -1,6 +1,9 @@
 package cpu
 
-import "fmt"
+import (
+	"encoding/binary"
+	"fmt"
+)
 
 type Cpu struct {
 	registers registers
@@ -223,6 +226,91 @@ func (g *Gameboy) Step() int {
 	return opCode.MCycles
 
 }
+
+func (g *Gameboy) SaveState() []byte {
+
+	buf := make([]byte, 0)
+	regs := g.cpu.registers
+	buf = append(buf, regs.a, regs.b, regs.c, regs.d, regs.e, regs.h, regs.l)
+	buf = append(buf, regs.f.convertInt8())
+	tmp := make([]byte, 2)
+	binary.LittleEndian.PutUint16(tmp, regs.sp)
+	buf = append(buf, tmp...)
+	binary.LittleEndian.PutUint16(tmp, g.cpu.pc)
+	buf = append(buf, tmp...)
+
+	if g.cpu.IME {
+		buf = append(buf, 1)
+	} else {
+		buf = append(buf, 0)
+	}
+
+	if g.cpu.IMESet {
+		buf = append(buf, 1)
+	} else {
+		buf = append(buf, 0)
+	}
+
+	if g.halted {
+		buf = append(buf, 1)
+	} else {
+		buf = append(buf, 0)
+	}
+
+	buf = append(buf, g.memory.mem...)
+	buf = append(buf, g.memory.cartridge_mem...)
+
+	return buf
+
+}
+
+func (g *Gameboy) LoadState(state []byte) error {
+	if len(state) < 65536+12 {
+		fmt.Println("State data too short:", len(state), "bytes")
+		return fmt.Errorf("state data too short: %d bytes", len(state))
+	}
+
+	idx := 0
+	g.cpu.registers.a = state[idx]
+	idx++
+	g.cpu.registers.b = state[idx]
+	idx++
+	g.cpu.registers.c = state[idx]
+	idx++
+	g.cpu.registers.d = state[idx]
+	idx++
+	g.cpu.registers.e = state[idx]
+	idx++
+	g.cpu.registers.h = state[idx]
+	idx++
+	g.cpu.registers.l = state[idx]
+	idx++
+	g.cpu.registers.f.setFromUint8(state[idx])
+	idx++
+
+	g.cpu.registers.sp = binary.LittleEndian.Uint16(state[idx : idx+2])
+	idx += 2
+	g.cpu.pc = binary.LittleEndian.Uint16(state[idx : idx+2])
+	idx += 2
+
+	g.cpu.IME = state[idx] != 0
+	idx++
+	g.cpu.IMESet = state[idx] != 0
+	idx++
+	g.halted = state[idx] != 0
+	idx++
+
+	copy(g.memory.mem, state[idx:idx+65536])
+	idx += 65536
+	g.memory.cartridge_mem = make([]uint8, len(state[idx:]))
+	copy(g.memory.cartridge_mem, state[idx:])
+	fmt.Println("cartridgemem", len(g.memory.cartridge_mem), len(state[idx:]))
+	g.memory.ApplyBanking()
+
+	return nil
+
+}
+
 func (g *Gameboy) DebugStep() int {
 
 	if g.cpu.IMESet {
@@ -261,11 +349,16 @@ func (g *Gameboy) DebugStep() int {
 	if g.haltbug {
 		g.cpu.pc--
 		g.haltbug = false
-		fmt.Println("Halt bug detected, stepping back")
-		// g.UpdateClock(1)
 		return 1
 	}
+	opcodeMux.RLock()
 	opCode := opcodes[code]
+	opcodeMux.RUnlock()
+
+	if opCode.Execute == nil {
+		fmt.Println(opCode, code)
+		return 1
+	}
 
 	opCode.Execute(g)
 	// g.UpdateClock(opCode.MCycles)

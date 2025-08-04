@@ -1,16 +1,57 @@
 package cpu
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type Memory struct {
-	mem           []uint8
+	cartridge_mem []uint8
+
+	mem []uint8
+
 	divCounter    uint16
 	timerCounter  uint16
 	timerFreq     uint16
 	timeroverflow bool
 
 	joypadState uint8
+
+	mcb            mcbtype
+	currentRomBank uint8
+	romBankHigh    uint8
+	romBankLow     uint8
+
+	enableRam      bool
+	ramBanks       []uint8
+	currentRamBank int
+
+	RomBankingMode bool
+
+	prevdebugbank uint8
+
+	RtcRegister  rtcRegister
+	RtcSelected  bool
+	CurrentRtc   uint8
+	lastRtcWrite uint64
 }
+
+type rtcRegister struct {
+	seconds uint8
+	minutes uint8
+	hours   uint8
+	dayLow  uint8
+	dayHigh uint8
+}
+
+type mcbtype int
+
+const (
+	mcbNone mcbtype = iota
+	mcbMBC1
+	mcbMBC2
+	mcbMBC3
+)
 
 const (
 	INTERRUPT_ENABLE = 0xFFFF
@@ -70,25 +111,142 @@ func (m *Memory) Init(size int) {
 }
 
 func (m *Memory) LoadROM(rom []byte) {
-	if len(rom) > len(m.mem) {
-		fmt.Println("ROM size exceeds memory size")
+	m.cartridge_mem = make([]uint8, len(rom))
+	copy(m.cartridge_mem, rom)
+	m.ApplyBanking()
+}
+
+func (m *Memory) ApplyBanking() {
+	rom := m.cartridge_mem
+	mcbint := rom[0x147]
+	fmt.Println(mcbint)
+	switch mcbint {
+	case 0x00:
+		m.mcb = mcbNone
+	case 0x01, 0x02, 0x03:
+		m.mcb = mcbMBC1
+	case 0x05, 0x06:
+		m.mcb = mcbMBC2
+	case 0x0F, 0x10, 0x11, 0x12, 0x13:
+		m.mcb = mcbMBC3
+		m.RtcRegister = rtcRegister{
+			seconds: 0,
+			minutes: 0,
+			hours:   0,
+			dayLow:  0,
+			dayHigh: 0}
+	default:
+		fmt.Println("Unknown MBC type:", mcbint)
 		return
 	}
-	copy(m.mem[ROM_BANK_0_START:ROM_BANK_0_END+1], rom)
+	m.currentRomBank = 1
+
+	var ramSize int
+	switch rom[0x149] {
+	case 0x00:
+		ramSize = 0
+	case 0x01:
+		ramSize = 2 * 1024
+	case 0x02:
+		ramSize = 8 * 1024
+	case 0x03:
+		ramSize = 32 * 1024
+	case 0x04:
+		ramSize = 128 * 1024
+	case 0x05:
+		ramSize = 64 * 1024
+	}
+
+	m.ramBanks = make([]uint8, ramSize)
+	m.currentRamBank = 0
+	m.romBankLow = 1
+	m.romBankHigh = 0
+
+	m.RomBankingMode = true
+	m.enableRam = false
+	m.updateCurrentRomBank()
+
+	fmt.Println(len(m.cartridge_mem))
+
+	m.CheckRomBankDuplicates()
+
+	copy(m.mem[ROM_BANK_0_START:ROM_BANK_0_END+1], m.cartridge_mem[ROM_BANK_0_START:ROM_BANK_0_END+1])
+
+}
+
+func (m *Memory) CheckRomBankDuplicates() {
+	const bankSize = 16 * 1024 // 16KB per bank
+	numBanks := len(m.cartridge_mem) / bankSize
+	bank0 := m.cartridge_mem[:bankSize]
+
+	for i := 1; i < numBanks; i++ {
+		banki := m.cartridge_mem[i*bankSize : (i+1)*bankSize]
+		same := true
+		for j := 0; j < bankSize; j++ {
+			if banki[j] != bank0[j] {
+				same = false
+				break
+			}
+		}
+		if same {
+			fmt.Printf("Bank %d is identical to bank 0\n", i)
+		}
+	}
 }
 
 func (m *Memory) readAddr(Addr uint16) uint8 {
 	if int(Addr) >= len(m.mem) {
-
 		fmt.Println("Memory read out of bounds at address:", Addr, len(m.mem))
 		return 0
 	}
-	if Addr == 0xFF00 {
 
+	switch {
+	case Addr <= 0x7FFF && Addr >= 0x4000:
+		if m.currentRomBank != m.prevdebugbank {
+
+			m.prevdebugbank = m.currentRomBank
+		}
+
+		var romBank uint8
+
+		if int(m.currentRomBank) >= len(m.cartridge_mem)/0x4000-1 {
+			romBank = m.currentRomBank % uint8(len(m.cartridge_mem)/0x4000)
+
+		} else {
+			romBank = m.currentRomBank
+		}
+		if m.currentRomBank == 0 {
+			romBank = 1
+		}
+
+		newaddr := uint64(Addr) - 0x4000 + uint64(romBank)*0x4000
+		if int(newaddr) >= len(m.cartridge_mem) {
+			fmt.Println("ROM read out of bounds at address:", newaddr)
+			return 0
+		}
+		return m.cartridge_mem[newaddr]
+	case Addr >= 0xA000 && Addr <= 0xBFFF:
+		if !m.enableRam || len(m.ramBanks) == 0 {
+			return 0xFF
+		}
+		var ramBank int
+		if m.mcb == mcbMBC1 && !m.RomBankingMode {
+			ramBank = m.currentRamBank
+		} else {
+			ramBank = 0
+		}
+
+		newAddr := Addr - 0xA000 + uint16(ramBank*0x2000)
+		if int(newAddr) >= len(m.ramBanks) {
+			fmt.Printf("RAM read out of bounds: Addr=0x%04X, newAddr=0x%04X\n", Addr, newAddr)
+			return 0
+		}
+		return m.ramBanks[newAddr]
+	case Addr == 0xFF00:
 		return m.getJoyPadState()
+	default:
+		return m.mem[Addr]
 	}
-
-	return m.mem[Addr]
 
 }
 
@@ -99,7 +257,28 @@ func (m *Memory) writeAddr(Addr uint16, val uint8) {
 	}
 
 	if Addr <= 0x7FFF {
-		// Optionally log or ignore silently
+		if m.mcb != mcbNone {
+			m.HandleBanking(Addr, val)
+		}
+		return
+	}
+
+	if Addr >= 0xA000 && Addr <= 0xBFFF {
+		if !m.enableRam || len(m.ramBanks) == 0 {
+			return
+		}
+		var ramBank int
+		if m.mcb == mcbMBC1 && !m.RomBankingMode {
+			ramBank = m.currentRamBank
+		} else {
+			ramBank = 0
+		}
+		newAddr := Addr - 0xA000 + uint16(ramBank*0x2000)
+		if int(newAddr) >= len(m.ramBanks) {
+			fmt.Printf("RAM write out of bounds: Addr=0x%04X, newAddr=0x%04X\n", Addr, newAddr)
+			return
+		}
+		m.ramBanks[newAddr] = val
 		return
 	}
 
@@ -171,7 +350,6 @@ func (m *Memory) EIGet(mask INTERRUPT_ENABLE_MASK) bool {
 }
 
 func (m *Memory) EFSet(mask INTERRUPT_FLAG_MASK) {
-
 	m.writeAddr(INTERRUPT_FLAG, m.readAddr(INTERRUPT_FLAG)|uint8(mask))
 }
 
@@ -207,4 +385,133 @@ func (g *Gameboy) UpdateClock(Mcycles int) {
 			}
 		}
 	}
+}
+
+func (m *Memory) HandleBanking(Addr uint16, val uint8) {
+	if m.mcb == mcbMBC1 {
+		switch {
+		case Addr < 0x2000:
+			if m.mcb != mcbNone {
+				data := val & 0x0F
+				if data == 0xA {
+					m.enableRam = true
+				} else {
+					m.enableRam = false
+				}
+			}
+		case Addr >= 0x2000 && Addr < 0x4000:
+			if m.mcb != mcbNone {
+				// fmt.Println("Switching ROM bank LO")
+				m.LoRomBankChange(val)
+			}
+
+		case Addr >= 0x4000 && Addr < 0x6000:
+			if m.mcb == mcbMBC1 {
+				if m.RomBankingMode {
+					m.HiRomBankChange(val)
+				} else {
+					fmt.Println("Switching RAM bank", val&0x03)
+					m.currentRamBank = int(val & 0x03)
+				}
+			}
+
+		case Addr >= 0x6000 && Addr < 0x8000:
+			if m.mcb == mcbMBC1 {
+				m.RomBankingMode = (val & 0x01) == 0
+				m.updateCurrentRomBank()
+			}
+		}
+	}
+
+	if m.mcb == mcbMBC3 {
+		if Addr < 0x2000 {
+			if val&0x0F == 0x0A {
+				m.enableRam = true
+			} else {
+				m.enableRam = false
+			}
+		}
+		if Addr >= 0x2000 && Addr < 0x4000 {
+			m.currentRomBank = val & 0x7F
+			if m.currentRomBank == 0 {
+				m.currentRomBank = 1
+			}
+		}
+
+		if Addr >= 0x4000 && Addr < 0x6000 {
+			if val <= 0x07 {
+				m.currentRamBank = int(val)
+				m.RtcSelected = false
+			} else if val >= 0x08 && val <= 0x0C {
+				m.RtcSelected = true
+
+				switch val {
+				case 0x08:
+					m.CurrentRtc = m.RtcRegister.seconds
+				case 0x09:
+					m.CurrentRtc = m.RtcRegister.minutes
+				case 0x0A:
+					m.CurrentRtc = m.RtcRegister.hours
+				case 0x0B:
+					m.CurrentRtc = m.RtcRegister.dayLow
+				case 0x0C:
+					m.CurrentRtc = m.RtcRegister.dayHigh
+				}
+			}
+		}
+
+		if Addr >= 0x6000 && Addr < 0x8000 {
+			if m.lastRtcWrite == 0x00 && val == 0x01 {
+				m.latchRtc()
+			}
+			m.lastRtcWrite = uint64(val)
+		}
+
+	}
+
+}
+
+func (m *Memory) latchRtc() {
+	now := time.Now()
+	m.RtcRegister.seconds = uint8(now.Second())
+	m.RtcRegister.minutes = uint8(now.Minute())
+	m.RtcRegister.hours = uint8(now.Hour())
+	day := now.YearDay() // Use day of year for example
+	m.RtcRegister.dayLow = uint8(day & 0xFF)
+	m.RtcRegister.dayHigh = uint8((day >> 8) & 0x01)
+}
+
+func (m *Memory) HiRomBankChange(val uint8) {
+	if m.mcb == mcbMBC1 {
+		m.romBankHigh = val & 0x03
+		m.updateCurrentRomBank()
+	}
+
+}
+
+func (m *Memory) LoRomBankChange(val uint8) {
+
+	if m.mcb == mcbMBC1 {
+		m.romBankLow = val & 0x1F
+		if m.romBankLow == 0 {
+			m.romBankLow = 1
+		}
+		m.updateCurrentRomBank()
+	}
+}
+
+func (m *Memory) updateCurrentRomBank() {
+	if m.romBankLow == 0 {
+		m.romBankLow = 1
+	}
+	if m.RomBankingMode {
+		m.currentRomBank = (m.romBankHigh << 5) | m.romBankLow
+	} else {
+		m.currentRomBank = m.romBankLow
+	}
+	m.currentRomBank &= 0x7F
+	if m.currentRomBank == 0 {
+		m.currentRomBank = 1
+	}
+
 }

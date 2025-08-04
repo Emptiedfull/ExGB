@@ -1,10 +1,10 @@
 const { animate, scroll } = Motion
 
-const pallete = {
-    0: "#9bbc0f",
-    1: "#8bac0f",
-    2: "#306230",
-    3: "#0f380f",
+var pallete = {
+    0: [155, 188, 15],   
+    1: [139, 172, 15],  
+    2: [48, 98, 48],     
+    3: [15, 56, 15],     
 }
 
 var modeDivs = {}
@@ -12,9 +12,34 @@ var modeDivs = {}
 var GameId = null
 var mode = "home"
 
+var Gameon = false
+
 var rompath = null
 
 var controlSoc = null
+
+var public = true
+
+
+var gameCanvas = null
+var ctx = null
+var Imagedata = null
+var buf = null
+
+const worker = new Worker('static/scripts/pixelworker.js')
+
+function uint8ToBase64(buffer) {
+    const uint8Array = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 0x8000; 
+    for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(
+            null,
+            uint8Array.subarray(i, i + chunkSize)
+        );
+    }
+    return btoa(binary);
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
 
@@ -24,7 +49,46 @@ document.addEventListener('DOMContentLoaded', async () => {
         "rom-selection": document.querySelector('.rom-selection'),
         "play": document.querySelector('.play'),
         "link": document.querySelector('.link'),
+        "gear": document.querySelector('.gear'),
     }
+
+    gameCanvas = document.querySelector('.gameCanvas')
+
+    loadbutton = document.querySelector('.rom-load')
+            loadbutton.addEventListener('click', () => {
+                const input = document.createElement('input')
+                input.type = 'file'
+                input.style.display = 'none'
+                input.accept = '.gb,.gbc,.bin'
+
+                input.onchange = (event) => {
+                    const file = event.target.files[0]
+                    if (file){
+                        const reader = new FileReader()
+                        reader.onload = (e) => {
+                            const romData = e.target.result
+                            console.log(romData.byteLength)
+                            const base64Data = uint8ToBase64(romData);
+                             console.log("Base64 length:", base64Data.length);
+                            controlSoc.send(JSON.stringify({
+                                "rom": "load",
+                                "state": base64Data,
+                            }))
+                            console.log("ROM loaded from file")
+                            mode = "game"
+                            handleModeChange()
+                        }
+                        reader.readAsArrayBuffer(file)
+                    }
+                }
+
+                document.body.appendChild(input)
+                input.click()
+                document.body.removeChild(input)
+
+                
+                
+            })
 
     menuControls = document.querySelectorAll('.menu-control')
     menuControls.forEach(control => {
@@ -48,20 +112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         })
     })
 
-    codeInput = document.getElementById('serverInput')
-    connectButton = document.getElementById('connectButton')
 
-    connectButton.addEventListener('click', () => {
-        const serverCode = codeInput.value.trim()
-        if (serverCode.length === 5) {
-            mode = "spectator"
-            GameId = serverCode
-            handleModeChange()
-            
-        } else {
-            console.error("Invalid server code. Please enter a 5-character code.")
-        }
-    })
 })
 
 
@@ -75,14 +126,34 @@ function handleModeChange() {
         }
     })
 
-    
 
     switch (mode) {
+        case "gear":
+            if (modeDivs.gear) {
+                modeDivs.gear.style.display = "flex"
+            }
+
+            fetchSettings()
+            setUpGearHandlers()
+
+            break
+        case "home":
+            if (modeDivs.home) {
+                modeDivs.home.style.display = "flex"
+            }
+
+            break
         case "spectator":
-              modeDivs.game.style.display = "flex"
-              startStream()
-              break
+            modeDivs.game.style.display = "flex"
+            startStream()
+            break
         case "play":
+            if (Gameon){
+                mode = "game"
+                handleModeChange()
+                return
+            }
+            
             if (modeDivs.play) {
                 modeDivs.play.style.display = "flex"
                 const playButton = document.getElementById('playButton')
@@ -90,23 +161,135 @@ function handleModeChange() {
                 playButton.addEventListener('click', () => {
                     startNewGame()
                 })
+
+                serverCountElement = document.getElementById('serverCount')
+                serverErrorElement = modeDivs.play.querySelector('.play-error')
+
+                fetch('http://localhost:8080/servers/count')
+                    .then(response => response.text())
+                    .then(count => {
+                        serverCountElement.textContent = count
+                        if (parseInt(count) > 0) {
+                            modeDivs.play.querySelector('.play-error').style.display = 'none'
+                        } else {
+                            serverErrorElement.textContent = "All Servers Busy"
+                            modeDivs.play.querySelector('.play-error').style.display = 'block'
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Error fetching server count:", error)
+                        serverCountElement.textContent = "0"
+                        serverErrorElement.textContent = "Error connecting to server, Pls inform admin"
+                        modeDivs.play.querySelector('.play-error').style.display = 'block'
+                    }
+                    )
             }
             break
         case "link":
             if (modeDivs.link) {
                 modeDivs.link.style.display = "flex"
+
+                console.log("Link mode activated")
+
+                codeInput = document.getElementById('serverInput')
+                connectButton = document.getElementById('connectButton')
+
+                connectButton.addEventListener('click', () => {
+                    const serverCode = codeInput.value.trim()
+                    if (serverCode.length === 5) {
+                        mode = "spectator"
+                        GameId = serverCode
+
+                        console.log("Connecting to server with code:", GameId)
+
+                        fetch(`http://localhost:8080/servers/status?id=${GameId}`).then(response => {
+                            if (!response.ok) {
+                                linkError = modeDivs.link.querySelector('.link-error')
+                                linkError.textContent = "Invalid server code"
+
+                            } else {
+                                handleModeChange()
+                            }
+                        }
+                        ).catch(error => {
+                            console.error("Error connecting to server:", error)
+                            linkError = modeDivs.link.querySelector('.link-error')
+                            linkError.textContent = "Error connecting to server, Pls inform admin"
+                        })
+
+
+                    } else {
+                        console.error("Invalid server code. Please enter a 5-character code.")
+                    }
+                })
             }
+
+
             break
         case "game":
             if (modeDivs.game) {
                 modeDivs.game.style.display = "flex"
                 handleControls(controlSoc)
             }
+
+            endButton = document.getElementById('exitGameButton')
+            endButton.addEventListener('click', () => {
+                controlSoc.close()
+                resetControlHandler()
+                mode = "play"
+                Gameon = false
+                handleModeChange()
+            })
+
+            saveButton = document.getElementById('saveStateButton')
+            saveButton.addEventListener('click', () => {
+                controlSoc.send(JSON.stringify({
+                    "meta":"savestate",
+                    "saveState": true,
+                }))
+                console.log("Save game request sent")
+            })
+
+            pauseButton = document.getElementById('pauseButton')
+            pauseButton.addEventListener('click', () => {
+                if (pauseButton.textContent === "PAUSE"){
+                    controlSoc.send(JSON.stringify({
+                        "meta":"pause",
+                        "pause": true,
+                    }))
+                    pauseButton.textContent = "RESUME"
+                    console.log("Game paused")
+                }else{
+                    controlSoc.send(JSON.stringify({
+                        "meta":"pause",
+                        "pause": false,
+                    }))
+                    pauseButton.textContent = "PAUSE"
+                    console.log("Game resumed")
+                }
+            })
+
             break
         case "rom-selection":
             if (modeDivs['rom-selection']) {
                 modeDivs['rom-selection'].style.display = "flex"
             }
+
+            startbutton = document.querySelector('.rom-start')
+            startbutton.addEventListener('click', () => {
+                if (rompath) {
+                    console.log("Starting game with ROM:", rompath)
+                    mode = "game"
+                    handleModeChange()
+                    controlSoc.send(JSON.stringify({
+                        "rom": rompath,
+                    }))
+                } else {
+                    console.warn("No ROM selected")
+                }
+            })
+
+            
 
             romlist = document.querySelector('.roms-list')
             if (romlist) {
@@ -115,21 +298,23 @@ function handleModeChange() {
                     rom.addEventListener('click', () => {
 
 
-                        if (rom.classList.contains('active')) {
-                            console.log("Starting game")
+                      
                             rompath = rom.getAttribute('data-rom')
-                            mode = "game"
-                            handleModeChange()
-                            console.log(soc)
-                            controlSoc.send(JSON.stringify({
-                                "rom": rompath,
-                            }))
-
-                        } else {
                             roms.forEach(r => { r.classList.remove('active') })
                             rom.classList.add('active')
 
-                        }
+                            romName = document.getElementById('romName')
+                            if (romName) {
+                                romName.textContent = rom.getAttribute('data-rom')
+                            }
+
+                            controlButtons = document.querySelector('.rom-controls')
+                            if (controlButtons) {
+                                controlButtons.querySelector('.rom-start').disabled = false
+                                controlButtons.querySelector('.rom-load').disabled = false
+                            }
+
+                        
 
 
                     })
@@ -163,12 +348,12 @@ function startStream() {
 
     soc.onopen = () => {
         console.log("WebSocket connection established")
-
-
+        Gameon = true
     }
 
     soc.onmessage = async (event) => {
         if (event.data instanceof Blob) {
+
             const arrayBuffer = await event.data.arrayBuffer()
             const byteArray = new Uint8Array(arrayBuffer)
             UpdateCanvas(byteArray)
@@ -212,7 +397,7 @@ function HandleKeyUp(event, soc) {
             "pressed": false,
             "key": key,
         }))
-        console.log("Key released:", event.key, "Mapped to:", key)
+
     } else {
         console.log("Unknown key released:", event.key)
         return
@@ -228,9 +413,9 @@ function HandleKeyDown(event, soc) {
             "pressed": true,
             "key": key,
         }))
-        console.log("Key pressed:", event.key, "Mapped to:", key)
+        
     } else {
-        console.log("Unknown key pressed:", event.key)
+        
         return
     }
 
@@ -245,7 +430,7 @@ function resetControlHandler() {
 
 
 function startNewGame() {
-    controlSoc = new WebSocket(`ws://localhost:8080/ws/start`)
+    controlSoc = new WebSocket(`ws://localhost:8080/ws/start?public=${public}`)
 
     controlSoc.onopen = () => {
         console.log("WebSocket connection established")
@@ -254,7 +439,27 @@ function startNewGame() {
     }
 
     controlSoc.onmessage = (event) => {
+        
+
+        if (event.data instanceof Blob){
+            console.log("Received binary data, saving ROM...")
+            const blob = new Blob([event.data], { type: 'application/octet-stream' })
+            const url = URL.createObjectURL(blob)
+
+            const now = new Date()
+           const timeString = now.toISOString().replace(/[:.]/g, '-')
+
+            const a = document.createElement('a')
+            a.href = url
+            a.download = rompath + timeString + ".bin"
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            URL.revokeObjectURL(url)
+            return
+        }
         const message = JSON.parse(event.data)
+
         if (message.id) {
             setGameId(message.id)
             startStream()
@@ -265,10 +470,6 @@ function startNewGame() {
     controlSoc.onclose = function (event) {
         console.log('Game controller disconnected');
         resetControlHandler()
-        setTimeout(() => {
-            console.log('Attempting to reconnect...');
-            startNewGame();
-        }, 3000);
     };
 
     controlSoc.onerror = (error) => {
@@ -276,34 +477,86 @@ function startNewGame() {
     }
 }
 
+function UpdateCanvas(data) {
+     renderFrame(data);
 
-const UpdateCanvas = (data) => {
-    gameCanvas = document.querySelector('.gameCanvas')
-    ctx = gameCanvas.getContext('2d')
-
-
-
-    gameCanvas.width = width * pixelSize
-    gameCanvas.height = height * pixelSize
-
-    let byteIndex = 0
-
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            if (byteIndex < data.length) {
-                // Get 2-bit pixel value (0, 1, 2, 3)
-                const pixelValue = data[byteIndex] & 0x3
-
-                // Set color from palette
-                ctx.fillStyle = pallete[pixelValue]
-
-                // Draw scaled pixel
-                ctx.fillRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize)
-
-                byteIndex++
-            }
-        }
-    }
 }
 
+const fetchSettings = () => {
+    currentPalette = document.querySelector('.current-pallete')
+    currentBlocks = currentPalette.querySelectorAll('span')
+    currentBlocks.forEach((block, index) => {
+        block.style.backgroundColor = `rgb(${pallete[index].join(',')})`
+    })
+}
 
+const palletes = [{
+    0: [155, 188, 15],   
+    1: [139, 172, 15],  
+    2: [48, 98, 48],     
+    3: [15, 56, 15],     
+},{
+    0: [113 ,49 ,65],   
+    1: [81, 40 ,57],  
+    2: [49 ,33 ,55],     
+    3: [26 ,33 ,41],     
+},{
+    0: [155, 188, 15],   
+    1: [139, 172, 15],  
+    2: [48, 98, 48],     
+    3: [15, 56, 15],     
+}]
+
+const Modes = ["PUBLIC", "PRIVATE"]
+
+
+const setUpGearHandlers = () =>{
+    console.log("Setting up gear handlers")
+    const palleteLeft = document.querySelector('.pallete-left')
+    const palleteRight = document.querySelector('.pallete-right')
+    const currentPalette = document.querySelector('.current-pallete')
+
+
+    palleteLeft.addEventListener('click', () => {
+        currentIndex = currentPalette.getAttribute('data-id')
+        let newIndex = parseInt(currentIndex) - 1
+        if (newIndex < 0) newIndex = palletes.length - 1
+        currentPalette.setAttribute('data-id', newIndex)
+        pallete = palletes[newIndex]
+        setPalette(pallete)
+        fetchSettings()
+    })
+
+    palleteRight.addEventListener('click', () => {
+        currentIndex = currentPalette.getAttribute('data-id')
+        let newIndex = parseInt(currentIndex) + 1
+        if (newIndex >= palletes.length) newIndex = 0
+        pallete = palletes[newIndex]
+        setPalette(pallete)
+        currentPalette.setAttribute('data-id', newIndex)
+        fetchSettings()
+    })
+
+    const modeLeft = document.querySelector('.mode-left')
+    const modeRight = document.querySelector('.mode-right')
+    const currentMode = document.querySelector('.current-mode')
+
+    modeLeft.addEventListener('click', () => {
+        currentIndex = currentMode.getAttribute('data-id')
+        let newIndex = parseInt(currentIndex) - 1
+        if (newIndex < 0) newIndex = Modes.length - 1
+        currentMode.setAttribute('data-id', newIndex)
+        public = (newIndex === 0)
+        currentMode.textContent = Modes[newIndex]
+    })
+
+    modeRight.addEventListener('click', () => {
+        currentIndex = currentMode.getAttribute('data-id')
+        let newIndex = parseInt(currentIndex) + 1
+        if (newIndex >= Modes.length) newIndex = 0
+        public = (newIndex === 0)
+        currentMode.setAttribute('data-id', newIndex)
+        currentMode.textContent = Modes[newIndex]
+    })
+
+}
