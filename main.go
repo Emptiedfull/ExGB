@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"sync"
@@ -32,6 +33,9 @@ type Viewer struct {
 type GameStore struct {
 	sync.RWMutex
 	Games map[string]*Game
+
+	logger  *log.Logger
+	logFile *os.File
 }
 
 type RomUpdate struct {
@@ -52,14 +56,17 @@ func main() {
 		Games: Games,
 	}
 
+	logFile, err := os.OpenFile("gbabot.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	if err != nil {
+		fmt.Println("Error opening log file:", err)
+		return
+	} else {
+		GamesStore.logger = log.New(logFile, "", 0)
+		GamesStore.logFile = logFile
+		GamesStore.logger.Println("Game store initialized")
+	}
+
 	setUpHttpServer(GamesStore)
-
-	// game := &Game{gb: gb, Oam: Oam}
-	// if err := ebiten.RunGame(game); err != nil {
-	// 	fmt.Println("Error running game:", err)
-	// }
-
-	// Games = append(Games, game)
 
 }
 
@@ -238,6 +245,7 @@ func createGame(user *websocket.Conn, store *GameStore, public bool) {
 	go HandleControl(Game, endchan, pauseChan)
 
 	go gb.Start(donechan, nil, pauseChan)
+	store.logger.Println("New game created with ID:", Game.ID, " and ROM:", rom.Rom)
 
 	// rompath := "./cpu/individual/acid.gb"
 	// rompath := "./tet.gb"
@@ -278,6 +286,10 @@ func UpdateScreen(g *Game) {
 
 		activeViewers := g.Viewers[:0]
 		for _, viewer := range g.Viewers {
+			if viewer.oldscreen == screen {
+				continue
+			}
+			viewer.oldscreen = screen
 			if !g.Public {
 				if viewer.conn != g.Control {
 					continue
@@ -333,6 +345,7 @@ func HandleGameEnd(store *GameStore, game *Game, endchan, donechan chan bool) {
 	store.Unlock()
 	game.Control.Close()
 	fmt.Println("Game removed from active games:", game.ID)
+	store.logger.Println("Game removed from active games:", game.ID)
 }
 
 func genRandomID() string {
