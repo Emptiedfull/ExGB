@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <title>ExGb Lobby</title>
-    <link rel="stylesheet" href="static/styles/index.css?v=90.0" />
+    <link rel="stylesheet" href="static/styles/index.css?v=29.0" />
     <script src="https://cdn.jsdelivr.net/npm/motion@latest/dist/motion.js"></script>
 
 
@@ -12,14 +12,11 @@
 
 <body>
     <div class="content">
-
-
-
         <div class="menu-cont">
             <div class="menu-controls">
                 <div class="menu-control active" data-mode="home"> HOME</div>
                 <div class="menu-control" data-mode="play"> PLAY </div>
-                <div class="menu-control"> GEAR </div>
+                <div class="menu-control" data-mode="gear"> GEAR </div>
                 <div class="menu-control" data-mode="link"> LINK </div>
             </div>
 
@@ -40,7 +37,7 @@
                             <br />
                             <span class="home-text-alt">GEAR:</span>Configure your gameboy experience.
                             <br />
-                            <br/>
+                            <br />
                             <span class="home-text-alt">LINK:</span>Spectate a game in progress.
                         </div>
                         <div class="home-updatelog">
@@ -71,12 +68,21 @@
                         SELECT A ROM
                     </h1>
                     <div class="roms-list">
-                        <img src="static/images/roms/rom1.png" alt="ROM 1" class="rom-item" data-rom="sumar">
+                        <img src="static/images/roms/rom1.png" alt="ROM 1" class="rom-item" data-rom="mario">
                         <img src="static/images/roms/rom2.png" alt="ROM 2" class="rom-item" data-rom="tetris">
-                        <img src="static/images/roms/rom3.png" alt="ROM 3" class="rom-item" data-rom="pok">
-                        <img src="static/images/roms/rom1.png" alt="ROM 4" class="rom-item" data-rom="mar">
-                        <img src="static/images/roms/rom2.png" alt="ROM 5" class="rom-item" data-rom="rom5">
-                        <img src="static/images/roms/rom3.png" alt="ROM 6" class="rom-item" data-rom="rom6">
+                        <img src="static/images/roms/rom3.png" alt="ROM 3" class="rom-item" data-rom="pok green">
+                        <img src="static/images/roms/rom1.png" alt="ROM 4" class="rom-item" data-rom="zelda">
+                        <img src="static/images/roms/rom2.png" alt="ROM 5" class="rom-item" data-rom="link">
+                        <img src="static/images/roms/rom3.png" alt="ROM 6" class="rom-item" data-rom="pok red">
+                        <img src="static/images/roms/rom3.png" alt="ROM 6" class="rom-item" data-rom="kirby">
+                        <img src="static/images/roms/rom3.png" alt="ROM 6" class="rom-item" data-rom="metroid">
+                    </div>
+                    <div class="rom-selection-content">
+                        <span>Loaded:</span><span id="romName">None</span>
+                        <div class="rom-controls">
+                            <button class="rom-start" disabled>START</button>
+                            <button class="rom-load">LOAD SAVE</button>
+                        </div>
                     </div>
 
                 </div>
@@ -96,23 +102,119 @@
                     </div>
                 </div>
 
-
-
                 <div class="game" style="display: none;">
-                    <canvas id="gameCanvas" class="gameCanvas" width="320" height="288"></canvas>
-                    <div class="game-ID">
-                        <h1>Game ID: </h1>
-                        <span id="gameId">0000</span>
+                    <div class="game-controls">
+                        <h1>META </h1>
+                        <button class="game-control" id="pauseButton">PAUSE</button>
+                        <button class="game-control" id="saveStateButton">SAVE STATE</button>
+                        <button class="game-control" id="exitGameButton">EXIT GAME</button>
                     </div>
+                    <div class="game-main">
+                        <canvas id="gameCanvas" class="gameCanvas" width="320" height="288"></canvas>
+                        <div class="game-ID">
+                            <h1>Game ID: </h1>
+                            <span id="gameId">0000</span>
+                        </div>
+                    </div>
+                    <div class="game-control-schema">
+                        <h1>CONTROL</h1>
+                        <span>SELECT: ESC</span>
+                        <span>START: ENTER</span>
+                        <span>UP: UP</span>
+                        <span>DOWN: DOWN</span>
+                        <span>LEFT: LEFT</span>
+                        <span>RIGHT: RIGHT</span>
+                        <span>A: A</span>
+                        <span>B: S</span>
+                    </div>
+
+
                 </div>
 
-            </div>
+                <div class="gear" style="display: none;">
+                    <h1 class="retro-title">
+                        GEAR
+                    </h1>
+                    <div class="settings">
+                        <div class="setting">
+                            <span>Pallete</span>
+                            <div class="pallete-select">
+                                <span class="pallete-left">
+                                    < </span>
+                                        <div class="current-pallete" data-id="0">
+                                            <span style="background-color:aqua"></span>
+                                            <span style="background-color: blue;"></span>
+                                            <span style="background-color: beige;"></span>
+                                            <span style="background-color: blueviolet;"></span>
+                                        </div>
+                                        <span class="pallete-right"> > </span>
+                            </div>
+                        </div>
+                        <div class="setting">
+                            <span>SOUND</span>
+                            <div class="effect-select">
+                                <span class="effect-left">
+                                    < </span>
+                                        <div class="current-effect" data-id="0">OFF </div>
+                                        <span class="effect-right"> > </span>
 
+                            </div>
+                        </div>
+                        <div class="setting">
+                            <span>Effects</span>
+                            <div class="effect-select">
+                                <span class="effect-left">
+                                    < </span>
+                                        <div class="current-effect" data-id="0">
+                                            LOW
+                                        </div>
+                                        <span class="effect-right"> > </span>
+
+                            </div>
+                        </div>
+                        <div class="setting">
+                            <span>Game-Type</span>
+                            <div class="game-type-select">
+                                <span class="mode-left">
+                                    < </span>
+                                        <div class="current-mode" data-id="0">
+                                            PUBLIC
+                                        </div>
+                                        <span class="mode-right"> > </span>
+                            </div>
+
+
+                        </div>
+                        <div class="feedback">
+                            <span class="feedback-text">Feedback</span>
+                            <textarea class="feedback-textarea" id="feedbackTextarea" rows="4"
+                                placeholder="Enter your feedback here..."></textarea>
+                            <button class="feedback-button" id="feedbackButton">SEND</button>
+                            <span class="feedback-success" id="feedbackSuccess" style="display:none;">Feedback sent
+                                successfully!</span>
+
+                        </div>
+                    </div>
+
+
+
+
+
+                </div>
+
+
+            </div>
+            
 
         </div>
-    </div>
+        <a href="https://github.com/Emptiedfull/" target="_blank" class="github-link">
+                <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/github/github-original.svg" alt="GitHub"
+                    style="width:24px;vertical-align:middle;margin-right:8px;">
+                    Emptiedfull
+            </a>
+    </div>  
 </body>
-<script src="static/scripts/webgl.js"></script>
-<script src="static/scripts/index.js?v=279"></script>
+<script src="static/scripts/webgl.js?v=02"></script>
+<script src="static/scripts/index.js?v=02"></script>
 
 </html>

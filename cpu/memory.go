@@ -1,10 +1,14 @@
 package cpu
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type Memory struct {
 	cartridge_mem []uint8
-	mem           []uint8
+
+	mem []uint8
 
 	divCounter    uint16
 	timerCounter  uint16
@@ -25,6 +29,19 @@ type Memory struct {
 	RomBankingMode bool
 
 	prevdebugbank uint8
+
+	RtcRegister  rtcRegister
+	RtcSelected  bool
+	CurrentRtc   uint8
+	lastRtcWrite uint64
+}
+
+type rtcRegister struct {
+	seconds uint8
+	minutes uint8
+	hours   uint8
+	dayLow  uint8
+	dayHigh uint8
 }
 
 type mcbtype int
@@ -96,7 +113,11 @@ func (m *Memory) Init(size int) {
 func (m *Memory) LoadROM(rom []byte) {
 	m.cartridge_mem = make([]uint8, len(rom))
 	copy(m.cartridge_mem, rom)
+	m.ApplyBanking()
+}
 
+func (m *Memory) ApplyBanking() {
+	rom := m.cartridge_mem
 	mcbint := rom[0x147]
 	fmt.Println(mcbint)
 	switch mcbint {
@@ -108,6 +129,12 @@ func (m *Memory) LoadROM(rom []byte) {
 		m.mcb = mcbMBC2
 	case 0x0F, 0x10, 0x11, 0x12, 0x13:
 		m.mcb = mcbMBC3
+		m.RtcRegister = rtcRegister{
+			seconds: 0,
+			minutes: 0,
+			hours:   0,
+			dayLow:  0,
+			dayHigh: 0}
 	default:
 		fmt.Println("Unknown MBC type:", mcbint)
 		return
@@ -144,6 +171,7 @@ func (m *Memory) LoadROM(rom []byte) {
 	m.CheckRomBankDuplicates()
 
 	copy(m.mem[ROM_BANK_0_START:ROM_BANK_0_END+1], m.cartridge_mem[ROM_BANK_0_START:ROM_BANK_0_END+1])
+
 }
 
 func (m *Memory) CheckRomBankDuplicates() {
@@ -360,39 +388,97 @@ func (g *Gameboy) UpdateClock(Mcycles int) {
 }
 
 func (m *Memory) HandleBanking(Addr uint16, val uint8) {
-	switch {
-	case Addr < 0x2000:
-		if m.mcb != mcbNone {
-			data := val & 0x0F
-			if data == 0xA {
+	if m.mcb == mcbMBC1 {
+		switch {
+		case Addr < 0x2000:
+			if m.mcb != mcbNone {
+				data := val & 0x0F
+				if data == 0xA {
+					m.enableRam = true
+				} else {
+					m.enableRam = false
+				}
+			}
+		case Addr >= 0x2000 && Addr < 0x4000:
+			if m.mcb != mcbNone {
+				// fmt.Println("Switching ROM bank LO")
+				m.LoRomBankChange(val)
+			}
+
+		case Addr >= 0x4000 && Addr < 0x6000:
+			if m.mcb == mcbMBC1 {
+				if m.RomBankingMode {
+					m.HiRomBankChange(val)
+				} else {
+					fmt.Println("Switching RAM bank", val&0x03)
+					m.currentRamBank = int(val & 0x03)
+				}
+			}
+
+		case Addr >= 0x6000 && Addr < 0x8000:
+			if m.mcb == mcbMBC1 {
+				m.RomBankingMode = (val & 0x01) == 0
+				m.updateCurrentRomBank()
+			}
+		}
+	}
+
+	if m.mcb == mcbMBC3 {
+		if Addr < 0x2000 {
+			if val&0x0F == 0x0A {
 				m.enableRam = true
 			} else {
 				m.enableRam = false
 			}
 		}
-	case Addr >= 0x2000 && Addr < 0x4000:
-		if m.mcb != mcbNone {
-			// fmt.Println("Switching ROM bank LO")
-			m.LoRomBankChange(val)
-		}
-
-	case Addr >= 0x4000 && Addr < 0x6000:
-		if m.mcb == mcbMBC1 {
-			if m.RomBankingMode {
-				m.HiRomBankChange(val)
-			} else {
-				fmt.Println("Switching RAM bank", val&0x03)
-				m.currentRamBank = int(val & 0x03)
+		if Addr >= 0x2000 && Addr < 0x4000 {
+			m.currentRomBank = val & 0x7F
+			if m.currentRomBank == 0 {
+				m.currentRomBank = 1
 			}
 		}
 
-	case Addr >= 0x6000 && Addr < 0x8000:
-		if m.mcb == mcbMBC1 {
-			m.RomBankingMode = (val & 0x01) == 0
-			m.updateCurrentRomBank()
+		if Addr >= 0x4000 && Addr < 0x6000 {
+			if val <= 0x07 {
+				m.currentRamBank = int(val)
+				m.RtcSelected = false
+			} else if val >= 0x08 && val <= 0x0C {
+				m.RtcSelected = true
+
+				switch val {
+				case 0x08:
+					m.CurrentRtc = m.RtcRegister.seconds
+				case 0x09:
+					m.CurrentRtc = m.RtcRegister.minutes
+				case 0x0A:
+					m.CurrentRtc = m.RtcRegister.hours
+				case 0x0B:
+					m.CurrentRtc = m.RtcRegister.dayLow
+				case 0x0C:
+					m.CurrentRtc = m.RtcRegister.dayHigh
+				}
+			}
 		}
+
+		if Addr >= 0x6000 && Addr < 0x8000 {
+			if m.lastRtcWrite == 0x00 && val == 0x01 {
+				m.latchRtc()
+			}
+			m.lastRtcWrite = uint64(val)
+		}
+
 	}
 
+}
+
+func (m *Memory) latchRtc() {
+	now := time.Now()
+	m.RtcRegister.seconds = uint8(now.Second())
+	m.RtcRegister.minutes = uint8(now.Minute())
+	m.RtcRegister.hours = uint8(now.Hour())
+	day := now.YearDay() // Use day of year for example
+	m.RtcRegister.dayLow = uint8(day & 0xFF)
+	m.RtcRegister.dayHigh = uint8((day >> 8) & 0x01)
 }
 
 func (m *Memory) HiRomBankChange(val uint8) {

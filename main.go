@@ -19,6 +19,8 @@ type Game struct {
 	Control     *websocket.Conn
 	Viewer_chan chan [160][144]byte
 
+	Public bool
+
 	ID string
 }
 
@@ -33,7 +35,8 @@ type GameStore struct {
 }
 
 type RomUpdate struct {
-	Rom string `json:"rom"`
+	Rom   string `json:"rom"`
+	State []byte `json:"state,omitempty"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -78,7 +81,8 @@ func setUpHttpServer(store *GameStore) {
 		w.Write([]byte(fmt.Sprintf("%d", count)))
 	})
 
-	http.HandleFunc("/server/check", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/servers/status", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("Received request for server status")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -105,12 +109,13 @@ func setUpHttpServer(store *GameStore) {
 
 	http.HandleFunc("/ws/start", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
+		public := r.URL.Query().Get("public") == "true"
 		if err != nil {
 			fmt.Println("Error upgrading connection:", err)
 			return
 		}
 
-		createGame(conn, store)
+		createGame(conn, store, public)
 	})
 
 	http.HandleFunc("/ws/view/", func(w http.ResponseWriter, r *http.Request) {
@@ -146,14 +151,18 @@ func setUpHttpServer(store *GameStore) {
 	http.ListenAndServe(":8080", nil)
 }
 
-func createGame(user *websocket.Conn, store *GameStore) {
+func createGame(user *websocket.Conn, store *GameStore, public bool) {
 
 	roms := map[string]string{
-		"acid":   "./cpu/individual/acid.gb",
-		"tetris": "./tet.gb",
-		"sumar":  "./sumar.gb",
-		"pok":    "./pok2.gb",
-		"mar":    "./mar.gb",
+		"tetris":    "./games/tet.gb",
+		"sumar":     "./games/sumar.gb",
+		"pok green": "./games/pok2.gb",
+		"mar":       "./games/mar.gb",
+		"zelda":     "./games/zelda.gb",
+		"link":      "./games/link.gb",
+		"poke red":  "./games/red.gb",
+		"kirby":     "./games/kirby.gb",
+		"metroid":   "./games/metroid.gb",
 	}
 
 	store.Lock()
@@ -167,13 +176,18 @@ func createGame(user *websocket.Conn, store *GameStore) {
 	ViewerChan := make(chan [160][144]byte, 10)
 	ControlChan := make(chan cpu.JoypadUpdate, 10)
 	endchan := make(chan bool)
+	donechan := make(chan bool)
+	pauseChan := make(chan bool)
+
 	gb := cpu.GBInitDebug(ViewerChan, ControlChan)
 
 	Game := &Game{
 		ID:      genRandomID(),
 		gb:      gb,
 		Control: user,
+		Public:  public,
 	}
+	go HandleGameEnd(store, Game, endchan, donechan)
 
 	Game.Viewer_chan = ViewerChan
 	store.Lock()
@@ -188,35 +202,42 @@ func createGame(user *websocket.Conn, store *GameStore) {
 		fmt.Println("Error reading ROM path from user:", err)
 		user.WriteJSON(map[string]string{"error": "Invalid ROM path"})
 		user.Close()
+		endchan <- true
 		return
 	}
 	fmt.Println("Received message from user:", string(rom.Rom))
 
-	romPath, exists := roms[string(rom.Rom)]
-	if !exists {
-		user.WriteJSON(map[string]string{"error": "ROM not found"})
-		fmt.Println("ROM not found for message:", string(rom.Rom))
-		user.Close()
-		return
-	}
+	if rom.Rom == "load" {
+		romdata := rom.State
+		gb.LoadState(romdata)
+	} else {
+		romPath, exists := roms[string(rom.Rom)]
+		if !exists {
+			user.WriteJSON(map[string]string{"error": "ROM not found"})
+			fmt.Println("ROM not found for message:", string(rom.Rom))
+			user.Close()
+			endchan <- true
+			return
+		}
 
-	romData, err := os.ReadFile(romPath)
-	if err != nil {
-		fmt.Println("Error loading ROM:", err)
-		user.WriteJSON(map[string]string{"error": "Error loading ROM"})
-		user.Close()
-		return
-	}
+		romData, err := os.ReadFile(romPath)
+		if err != nil {
+			fmt.Println("Error loading ROM:", err)
+			user.WriteJSON(map[string]string{"error": "Error loading ROM"})
+			user.Close()
+			endchan <- true
+			return
+		}
 
-	gb.LOADROM(romData)
+		gb.LOADROM(romData)
+	}
 
 	user.WriteJSON(map[string]string{"success": "rom loaded"})
 
 	go UpdateScreen(Game)
-	go HandleControl(Game, endchan)
-	go HandleGameEnd(store, Game, endchan)
+	go HandleControl(Game, endchan, pauseChan)
 
-	go gb.Start(nil, nil)
+	go gb.Start(donechan, nil, pauseChan)
 
 	// rompath := "./cpu/individual/acid.gb"
 	// rompath := "./tet.gb"
@@ -257,6 +278,11 @@ func UpdateScreen(g *Game) {
 
 		activeViewers := g.Viewers[:0]
 		for _, viewer := range g.Viewers {
+			if !g.Public {
+				if viewer.conn != g.Control {
+					continue
+				}
+			}
 			err := viewer.conn.WriteMessage(websocket.BinaryMessage, flatBytes)
 			if err != nil {
 				viewer.conn.Close()
@@ -268,7 +294,7 @@ func UpdateScreen(g *Game) {
 	}
 }
 
-func HandleControl(g *Game, endchan chan bool) {
+func HandleControl(g *Game, endchan chan bool, pauseChan chan bool) {
 	for {
 		var update cpu.JoypadUpdate
 		err := g.Control.ReadJSON(&update)
@@ -278,12 +304,25 @@ func HandleControl(g *Game, endchan chan bool) {
 			endchan <- true
 			return
 		}
-		g.gb.ControlChan <- update
+		if update.Meta == "" {
+			g.gb.ControlChan <- update
+		}
+
+		if update.Meta == "savestate" && update.SaveState {
+			state := g.gb.SaveState()
+			g.Control.WriteMessage(websocket.BinaryMessage, state)
+		}
+
+		if update.Meta == "pause" {
+			pauseChan <- update.Pause
+		}
+
 	}
 }
 
-func HandleGameEnd(store *GameStore, game *Game, endchan chan bool) {
+func HandleGameEnd(store *GameStore, game *Game, endchan, donechan chan bool) {
 	<-endchan
+	donechan <- true
 	fmt.Println("Game ended:", game.ID)
 
 	for _, viewer := range game.Viewers {

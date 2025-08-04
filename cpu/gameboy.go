@@ -31,6 +31,10 @@ type Gameboy struct {
 type JoypadUpdate struct {
 	Pressed bool `json:"pressed"`
 	Key     int  `json:"key"`
+
+	Meta      string `json:"meta"`
+	SaveState bool   `json:"saveState"`
+	Pause     bool   `json:"pause"`
 }
 
 func (g *Gameboy) ReadAddr(Addr uint16) uint8 {
@@ -176,7 +180,7 @@ func (g *Gameboy) fetch16() uint16 {
 	return uint16(high)<<8 | uint16(low)
 }
 
-func (g *Gameboy) Start(done chan bool, manual chan bool) {
+func (g *Gameboy) Start(done chan bool, manual chan bool, pauseChan chan bool) {
 	g.clock.totalMcycles = 0
 	g.clock.totalTcycles = 0
 
@@ -189,6 +193,12 @@ func (g *Gameboy) Start(done chan bool, manual chan bool) {
 	frame := 0
 	for {
 		select {
+		case p := <-pauseChan:
+			if p {
+				ticker.Stop()
+			} else {
+				ticker = time.NewTicker(time.Second / 60)
+			}
 		case <-done:
 			ticker.Stop()
 			return
