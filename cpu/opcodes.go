@@ -583,6 +583,8 @@ func (g *Gameboy) initOpcodes() map[uint8]OpCode {
 			code := prefixOpCodes[g.fetch()]
 			code(g)
 		}}, 0xCC: {MCycles: 3, Execute: func(g *Gameboy) {
+			opcodeMux.Lock()
+			defer opcodeMux.Unlock()
 			OpCode := opcodes[0xCC]
 			Addr := g.fetch16()
 			if g.cpu.registers.f.z {
@@ -599,6 +601,9 @@ func (g *Gameboy) initOpcodes() map[uint8]OpCode {
 		}}, 0xCF: {MCycles: 4, Execute: func(g *Gameboy) {
 			g.callu16(0x08)
 		}}, 0xD0: {MCycles: 2, Execute: func(g *Gameboy) {
+			opcodeMux.Lock()
+			defer opcodeMux.Unlock()
+
 			opcode := opcodes[0xD0]
 			if !g.cpu.registers.f.c {
 				g.ret()
@@ -622,6 +627,8 @@ func (g *Gameboy) initOpcodes() map[uint8]OpCode {
 			}
 			opcodes[0xD2] = opcode
 		}}, 0xD4: {MCycles: 3, Execute: func(g *Gameboy) {
+			opcodeMux.Lock()
+			defer opcodeMux.Unlock()
 			OpCode := opcodes[0xD4]
 			Addr := g.fetch16()
 			if !g.cpu.registers.f.c {
@@ -638,6 +645,8 @@ func (g *Gameboy) initOpcodes() map[uint8]OpCode {
 		}}, 0xD7: {MCycles: 4, Execute: func(g *Gameboy) {
 			g.callu16(0x10)
 		}}, 0xD8: {MCycles: 2, Execute: func(g *Gameboy) {
+			opcodeMux.Lock()
+			defer opcodeMux.Unlock()
 			opcode := opcodes[0xD8]
 			if g.cpu.registers.f.c {
 				g.ret()
@@ -650,6 +659,8 @@ func (g *Gameboy) initOpcodes() map[uint8]OpCode {
 			g.ret()
 			g.enableInterrupts()
 		}}, 0xDA: {MCycles: 3, Execute: func(g *Gameboy) {
+			opcodeMux.Lock()
+			defer opcodeMux.Unlock()
 			opcode := opcodes[0xDA]
 			Addr := g.fetch16()
 			if g.cpu.registers.f.c {
@@ -660,6 +671,8 @@ func (g *Gameboy) initOpcodes() map[uint8]OpCode {
 			}
 			opcodes[0xDA] = opcode
 		}}, 0xDC: {MCycles: 3, Execute: func(g *Gameboy) {
+			opcodeMux.Lock()
+			defer opcodeMux.Unlock()
 			OpCode := opcodes[0xDC]
 			Addr := g.fetch16()
 			if g.cpu.registers.f.c {

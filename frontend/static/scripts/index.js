@@ -165,7 +165,7 @@ function handleModeChange() {
                 serverCountElement = document.getElementById('serverCount')
                 serverErrorElement = modeDivs.play.querySelector('.play-error')
 
-                fetch('http://localhost:8080/servers/count')
+                fetch('https://ex-gb.com/api/servers/count')
                     .then(response => response.text())
                     .then(count => {
                         serverCountElement.textContent = count
@@ -202,7 +202,7 @@ function handleModeChange() {
 
                         console.log("Connecting to server with code:", GameId)
 
-                        fetch(`http://localhost:8080/servers/status?id=${GameId}`).then(response => {
+                        fetch(`https://ex-gb.com/api/servers/status?id=${GameId}`).then(response => {
                             if (!response.ok) {
                                 linkError = modeDivs.link.querySelector('.link-error')
                                 linkError.textContent = "Invalid server code"
@@ -344,7 +344,7 @@ const height = 144
 const pixelSize = 2
 
 function startStream() {
-    soc = new WebSocket(`ws://localhost:8080/ws/view/${GameId}`)
+    soc = new WebSocket(`wss://ex-gb.com/api/ws/view/${GameId}`)
 
     soc.onopen = () => {
         console.log("WebSocket connection established")
@@ -430,7 +430,7 @@ function resetControlHandler() {
 
 
 function startNewGame() {
-    controlSoc = new WebSocket(`ws://localhost:8080/ws/start?public=${public}`)
+    controlSoc = new WebSocket(`wss://ex-gb.com/api/ws/start?public=${public}`)
 
     controlSoc.onopen = () => {
         console.log("WebSocket connection established")

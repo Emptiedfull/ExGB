@@ -216,16 +216,6 @@ func (r *registers) getHl() uint16 {
 	return uint16(r.h)<<8 | uint16(r.l)&0xFF
 }
 
-func (g *Gameboy) Step() int {
-	code := g.fetch()
-	opCode := opcodes[code]
-	opCode.Execute(g)
-
-	//fmt.Printf("0x%02X %d MCycles\n", code, opCode.MCycles)
-
-	return opCode.MCycles
-
-}
 
 func (g *Gameboy) SaveState() []byte {
 
@@ -351,9 +341,9 @@ func (g *Gameboy) DebugStep() int {
 		g.haltbug = false
 		return 1
 	}
-	opcodeMux.RLock()
+	opcodeMux.Lock()
 	opCode := opcodes[code]
-	opcodeMux.RUnlock()
+	opcodeMux.Unlock()
 
 	if opCode.Execute == nil {
 		fmt.Println(opCode, code)

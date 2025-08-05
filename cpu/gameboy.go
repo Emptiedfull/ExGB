@@ -96,7 +96,9 @@ func GBInitDebug(viewerChan chan [160][144]byte, controlChan chan JoypadUpdate) 
 
 	gb.memory.Init(65536)
 
+	opcodeMux.Lock()
 	opcodes = gb.initOpcodes()
+	opcodeMux.Unlock()
 	gb.SetPostBootState()
 
 	gb.cpu.pc = 0x0100

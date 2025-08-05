@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"strings"
 
 	"gbabot/cpu"
 
@@ -75,7 +76,7 @@ func setUpHttpServer(store *GameStore) {
 		w.Write([]byte("Welcome to ExGB - GameBoy Emulator!"))
 	})
 
-	http.HandleFunc("/servers/count", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/servers/count", func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -88,7 +89,7 @@ func setUpHttpServer(store *GameStore) {
 		w.Write([]byte(fmt.Sprintf("%d", count)))
 	})
 
-	http.HandleFunc("/servers/status", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/servers/status", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Received request for server status")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -114,7 +115,9 @@ func setUpHttpServer(store *GameStore) {
 		w.Write([]byte("Game is active"))
 	})
 
-	http.HandleFunc("/ws/start", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/ws/start", func(w http.ResponseWriter, r *http.Request) {
+		ip := getClientIP(r)
+		fmt.Println("New connection from IP:", ip)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		public := r.URL.Query().Get("public") == "true"
 		if err != nil {
@@ -125,10 +128,10 @@ func setUpHttpServer(store *GameStore) {
 		createGame(conn, store, public)
 	})
 
-	http.HandleFunc("/ws/view/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/ws/view/", func(w http.ResponseWriter, r *http.Request) {
 
 		path := r.URL.Path
-		id := path[len("/ws/view/"):]
+		id := path[len("/api/ws/view/"):]
 
 		if id == "" || len(id) != 5 {
 			http.Error(w, "Game ID is required", http.StatusBadRequest)
@@ -158,14 +161,45 @@ func setUpHttpServer(store *GameStore) {
 	http.ListenAndServe(":8080", nil)
 }
 
+func getClientIP(r *http.Request) string {
+    // Check for X-Forwarded-For header (when behind a proxy/load balancer)
+    xff := r.Header.Get("X-Forwarded-For")
+    if xff != "" {
+        // X-Forwarded-For can contain multiple IPs, take the first one
+        ips := strings.Split(xff, ",")
+        return strings.TrimSpace(ips[0])
+    }
+    
+    // Check for X-Real-IP header (alternative proxy header)
+    xri := r.Header.Get("X-Real-IP")
+    if xri != "" {
+        return xri
+    }
+    
+    // Check for CF-Connecting-IP header (Cloudflare specific)
+    cfip := r.Header.Get("CF-Connecting-IP")
+    if cfip != "" {
+        return cfip
+    }
+    
+    // Fall back to RemoteAddr
+    ip := r.RemoteAddr
+    // Remove port if present
+    if lastColon := strings.LastIndex(ip, ":"); lastColon != -1 {
+        ip = ip[:lastColon]
+    }
+    
+    return ip
+}
+
 func createGame(user *websocket.Conn, store *GameStore, public bool) {
 
 	roms := map[string]string{
 		"tetris":    "./games/tet.gb",
-		"sumar":     "./games/sumar.gb",
+		"mario":     "./games/sumar.gb",
 		"pok green": "./games/pok2.gb",
 		"mar":       "./games/mar.gb",
-		"zelda":     "./games/zelda.gb",
+		"zelda":     "./games/link.gb",
 		"link":      "./games/link.gb",
 		"poke red":  "./games/red.gb",
 		"kirby":     "./games/kirby.gb",
@@ -201,7 +235,7 @@ func createGame(user *websocket.Conn, store *GameStore, public bool) {
 	store.Games[Game.ID] = Game
 	store.Unlock()
 	user.WriteJSON(map[string]string{"id": Game.ID})
-	fmt.Println("waiting for user to send rom path...")
+	fmt.Println("waiting for user to send rom path...",)
 
 	var rom RomUpdate
 	err := user.ReadJSON(&rom)
