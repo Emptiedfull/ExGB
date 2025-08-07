@@ -72,7 +72,11 @@ body {
 
     display: flex;
     flex-direction: row;
-     animation: menu-glitch 4s infinite
+   
+}
+
+.menu-cont.highAnimation {
+    animation: menu-glitch 4s infinite;
 }
 
 .home{
@@ -109,12 +113,15 @@ body {
 
 .home-text{
     
-    font-size: 0.8rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
     margin-top: 1rem;
     width: 60%;
     color: #0f380f;
-    line-height: 1.6;
-
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    justify-content: space-evenly;
     
 }
 
@@ -1077,7 +1084,7 @@ body {
     justify-content: space-between;
 }
 
-.pallete-select,.effect-select,.sound-select,.game-type-select {
+.pallete-select,.effect-select,.sound-select,.game-type-select,.game-speed-select {
     cursor:pointer;
     width: 30%;
     display: flex;
@@ -1086,7 +1093,7 @@ body {
     justify-content: flex-end;
 }
 
-.pallete-select,.effect-select,.sound-select,.game-type-select span {
+.pallete-select,.effect-select,.sound-select,.game-type-select,.game-speed-select span {
     
     font-size: 1.1rem;
     color: #0f380f;
@@ -1121,6 +1128,8 @@ body {
     box-shadow: 0 4px 0 #0f380f, 0 8px 12px rgba(15,56,15,0.12);
     font-family: 'Press Start 2P', monospace;
     color: #0f380f;
+    display: flex;
+    flex-direction: column;
 }
 
 .feedback-text {
@@ -1146,6 +1155,7 @@ body {
     resize: none;
     box-shadow: 0 2px 0 #cddfc0;
     outline: none;
+    flex: 1;
 }
 
 .feedback-button {

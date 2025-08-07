@@ -3,11 +3,9 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>ExGb Lobby</title>
-    <link rel="stylesheet" href="static/styles/index.css?v=29.0" />
+    <title>ExGb</title>
+    <link rel="stylesheet" href="static/styles/index.css?v=9123.0" />
     <script src="https://cdn.jsdelivr.net/npm/motion@latest/dist/motion.js"></script>
-
-
 </head>
 
 <body>
@@ -32,17 +30,20 @@
                     </h2>
                     <div class="home-content">
                         <div class="home-text">
-                            <span class="home-text-alt">PLAY:</span>Play from a variety of Gameboy ROMs.
-                            <br />
-                            <br />
-                            <span class="home-text-alt">GEAR:</span>Configure your gameboy experience.
-                            <br />
-                            <br />
-                            <span class="home-text-alt">LINK:</span>Spectate a game in progress.
+                            <span><span class="home-text-alt">PLAY:</span>Play from a variety of Gameboy ROMs.</span>
+                         
+                            <span><span class="home-text-alt">GEAR:</span>Configure your gameboy experience.</span>
+        
+                            <span><span class="home-text-alt">LINK:</span>Spectate a game in progress.</span>
                         </div>
                         <div class="home-updatelog">
                             <h3>Update Log</h3>
                             <ul>
+                                <li>Css update!</li>
+                                <li>New Feature: Speed Changes</li>
+                                <li>Hosted!</li>
+                                <li>New Feature: Saves!</li>
+                                <li>Fully local now!</li>
                                 <li>Added new ROMs</li>
                                 <li>Improved server connection stability</li>
                                 <li>Fixed various bugs</li>
@@ -59,7 +60,7 @@
                     </h1>
                     <div class="play-content">
                         <span class="play-error error" style="display:none;"></span>
-                        <span class="play-content-text">AVAILABLE SERVERS: <span id="serverCount">0</span></span>
+                        <span class="play-content-text">AVAILABLE SERVERS: 1<span id="serverCount">0</span></span>
                         <button id="playButton" class="play-button">REQUEST GAMEBOY</button>
                     </div>
                 </div>
@@ -68,12 +69,10 @@
                         SELECT A ROM
                     </h1>
                     <div class="roms-list">
+                        <img src="static/images/roms/rom1.png" alt="ROM 1" class="rom-item" data-rom="Drmario">
                         <img src="static/images/roms/rom1.png" alt="ROM 1" class="rom-item" data-rom="mario">
                         <img src="static/images/roms/rom2.png" alt="ROM 2" class="rom-item" data-rom="tetris">
-                        <img src="static/images/roms/rom3.png" alt="ROM 3" class="rom-item" data-rom="pok green">
-                        <img src="static/images/roms/rom1.png" alt="ROM 4" class="rom-item" data-rom="zelda">
-                        <img src="static/images/roms/rom2.png" alt="ROM 5" class="rom-item" data-rom="link">
-                        <img src="static/images/roms/rom3.png" alt="ROM 6" class="rom-item" data-rom="pok red">
+                        <img src="static/images/roms/rom2.png" alt="ROM 5" class="rom-item" data-rom="zelda">
                         <img src="static/images/roms/rom3.png" alt="ROM 6" class="rom-item" data-rom="kirby">
                         <img src="static/images/roms/rom3.png" alt="ROM 6" class="rom-item" data-rom="metroid">
                     </div>
@@ -92,13 +91,13 @@
                         LINK
                     </h1>
                     <div class="link-content">
-                        <span class="link-error error"></span>
-                        <span class="link-content-text">Spectate game</span>
-                        <div class="link-input-wrap">
+                        <span class="link-error error">DISABLED FOR WASM</span>
+                        <span class="link-content-text" style="display: none;">Spectate game</span>
+                        <div class="link-input-wrap" style="display: none;">
                             <input class="link-input" type="text" id="serverInput" maxlength="5" pattern=".{5,}"
                                 required autocomplete="off" />
                         </div>
-                        <button id="connectButton" class="link-button">CONNECT</button>
+                        <button id="connectButton" class="link-button" style="display:none">CONNECT</button>
                     </div>
                 </div>
 
@@ -107,7 +106,9 @@
                         <h1>META </h1>
                         <button class="game-control" id="pauseButton">PAUSE</button>
                         <button class="game-control" id="saveStateButton">SAVE STATE</button>
+                        <button class="game-control" id="loadStateButton">LOAD STATE</button>
                         <button class="game-control" id="exitGameButton">EXIT GAME</button>
+                       
                     </div>
                     <div class="game-main">
                         <canvas id="gameCanvas" class="gameCanvas" width="320" height="288"></canvas>
@@ -118,14 +119,14 @@
                     </div>
                     <div class="game-control-schema">
                         <h1>CONTROL</h1>
-                        <span>SELECT: ESC</span>
-                        <span>START: ENTER</span>
-                        <span>UP: UP</span>
-                        <span>DOWN: DOWN</span>
-                        <span>LEFT: LEFT</span>
-                        <span>RIGHT: RIGHT</span>
-                        <span>A: A</span>
-                        <span>B: S</span>
+                        <span class="currentKey" id="SELECT">SELECT: ESC</span>
+                        <span class="currentKey" id="START">START: ENTER</span>
+                        <span class="currentKey" id="UP">UP: UP</span>
+                        <span class="currentKey" id="DOWN">DOWN: DOWN</span>
+                        <span class="currentKey" id="LEFT">LEFT: LEFT</span>
+                        <span class="currentKey" id="RIGHT">RIGHT: RIGHT</span>
+                        <span class="currentKey" id="A">A: A</span>
+                        <span class="currentKey" id="B">B: S</span>
                     </div>
 
 
@@ -151,16 +152,6 @@
                             </div>
                         </div>
                         <div class="setting">
-                            <span>SOUND</span>
-                            <div class="effect-select">
-                                <span class="effect-left">
-                                    < </span>
-                                        <div class="current-effect" data-id="0">OFF </div>
-                                        <span class="effect-right"> > </span>
-
-                            </div>
-                        </div>
-                        <div class="setting">
                             <span>Effects</span>
                             <div class="effect-select">
                                 <span class="effect-left">
@@ -173,17 +164,15 @@
                             </div>
                         </div>
                         <div class="setting">
-                            <span>Game-Type</span>
-                            <div class="game-type-select">
-                                <span class="mode-left">
+                            <span>Game-Speed</span>
+                            <div class="game-speed-select">
+                                <span class="speed-left">
                                     < </span>
-                                        <div class="current-mode" data-id="0">
-                                            PUBLIC
+                                        <div class="current-speed" data-id="0">
+                                            1
                                         </div>
-                                        <span class="mode-right"> > </span>
+                                        <span class="speed-right"> > </span>
                             </div>
-
-
                         </div>
                         <div class="feedback">
                             <span class="feedback-text">Feedback</span>
@@ -214,7 +203,8 @@
             </a>
     </div>  
 </body>
+<script src="static/scripts/wasm_exec.js"></script>
 <script src="static/scripts/webgl.js?v=02"></script>
-<script src="static/scripts/index.js?v=02"></script>
+<script src="static/scripts/index.js?v=a1"></script>
 
 </html>

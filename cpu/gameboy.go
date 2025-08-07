@@ -26,6 +26,8 @@ type Gameboy struct {
 
 	ViewerChan  chan [160][144]byte
 	ControlChan chan JoypadUpdate
+
+	MPC int
 }
 
 type JoypadUpdate struct {
@@ -84,6 +86,7 @@ func GBInitDebug(viewerChan chan [160][144]byte, controlChan chan JoypadUpdate) 
 		haltbug:     false,
 		ViewerChan:  viewerChan,
 		ControlChan: controlChan,
+		MPC:         MCYCLES_PER_FRAME,
 	}
 
 	// logFile, err := os.OpenFile("gbabot.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
@@ -180,6 +183,16 @@ func (g *Gameboy) fetch16() uint16 {
 	return uint16(high)<<8 | uint16(low)
 }
 
+func (g *Gameboy) ChangeSpeed(mult int) {
+	if mult < 1 {
+		mult = 1
+	}
+	if mult > 8 {
+		mult = 8
+	}
+	g.MPC = MCYCLES_PER_FRAME * mult
+}
+
 func (g *Gameboy) Start(done chan bool, manual chan bool, pauseChan chan bool) {
 	g.clock.totalMcycles = 0
 	g.clock.totalTcycles = 0
@@ -195,15 +208,17 @@ func (g *Gameboy) Start(done chan bool, manual chan bool, pauseChan chan bool) {
 		select {
 		case p := <-pauseChan:
 			if p {
+				fmt.Println("Game paused")
 				ticker.Stop()
 			} else {
+				fmt.Println("Game resumed")
 				ticker = time.NewTicker(time.Second / 60)
 			}
 		case <-done:
 			ticker.Stop()
 			return
 		case <-manual:
-			i := MCYCLES_PER_FRAME
+			i := g.MPC
 
 			for g.memory.mem[LY] <= 154 {
 				cycles := g.DebugStep()
@@ -223,7 +238,7 @@ func (g *Gameboy) Start(done chan bool, manual chan bool, pauseChan chan bool) {
 			g.clock.totalTcycles += TCYCLES_PER_FRAME
 			g.clock.totalMcycles += MCYCLES_PER_FRAME
 
-			i := MCYCLES_PER_FRAME
+			i := g.MPC
 
 			for i > 0 {
 				cycles := g.DebugStep()
@@ -236,7 +251,6 @@ func (g *Gameboy) Start(done chan bool, manual chan bool, pauseChan chan bool) {
 				g.OldScreen = g.WebScreen
 				g.ViewerChan <- g.WebScreen
 			}
-
 		}
 	}
 

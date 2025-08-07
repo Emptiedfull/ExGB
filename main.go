@@ -1,266 +1,130 @@
 package main
 
 import (
-	"crypto/rand"
 	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"sync"
-
 	"gbabot/cpu"
-
-	"github.com/gorilla/websocket"
+	"syscall/js"
 )
 
-type Game struct {
-	gb *cpu.Gameboy
+type game struct {
+	gb          *cpu.Gameboy
+	viewerChan  chan [160][144]byte
+	controlChan chan cpu.JoypadUpdate
 
-	Viewers     []*Viewer
-	Control     *websocket.Conn
-	Viewer_chan chan [160][144]byte
+	romLoaded bool
+	running   bool
 
-	Public bool
-
-	ID string
+	doneChan  chan bool
+	pauseChan chan bool
+	endChan   chan bool
+	oldFrame  [160][144]byte
 }
 
-type Viewer struct {
-	oldscreen [160][144]byte
-	conn      *websocket.Conn
-}
-
-type GameStore struct {
-	sync.RWMutex
-	Games map[string]*Game
-
-	logger  *log.Logger
-	logFile *os.File
-}
-
-type RomUpdate struct {
-	Rom   string `json:"rom"`
-	State []byte `json:"state,omitempty"`
-}
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
+var Game *game
 
 func main() {
+	js.Global().Set("initGameboy", js.FuncOf(InitGameboy))
+	js.Global().Set("sendInput", js.FuncOf(sendInput))
+	js.Global().Set("loadRom", js.FuncOf(loadRom))
+	js.Global().Set("startGame", js.FuncOf(startGame))
+	js.Global().Set("pauseGame", js.FuncOf(pauseGame))
+	js.Global().Set("resumeGame", js.FuncOf(resumeGame))
+	js.Global().Set("endGame", js.FuncOf(endGame))
+	js.Global().Set("saveState", js.FuncOf(getState))
+	js.Global().Set("loadState", js.FuncOf(loadState))
+	js.Global().Set("changeSpeed", js.FuncOf(ChangeSpeed))
+	js.Global().Set("checkGameState", js.FuncOf(CheckGameState))
 
-	Games := make(map[string]*Game)
-	GamesStore := &GameStore{
-		Games: Games,
-	}
-
-	logFile, err := os.OpenFile("gbabot.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
-	if err != nil {
-		fmt.Println("Error opening log file:", err)
-		return
-	} else {
-		GamesStore.logger = log.New(logFile, "", 0)
-		GamesStore.logFile = logFile
-		GamesStore.logger.Println("Game store initialized")
-	}
-
-	setUpHttpServer(GamesStore)
-
+	<-make(chan bool)
 }
 
-func setUpHttpServer(store *GameStore) {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Welcome to ExGB - GameBoy Emulator!"))
-	})
-
-	http.HandleFunc("/servers/count", func(w http.ResponseWriter, r *http.Request) {
-
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-		store.RLock()
-		count := 10 - len(store.Games)
-		store.RUnlock()
-		fmt.Println("Received request for server count", count)
-		w.Write([]byte(fmt.Sprintf("%d", count)))
-	})
-
-	http.HandleFunc("/servers/status", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("Received request for server status")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-		id := r.URL.Query().Get("id")
-		if id == "" || len(id) != 5 {
-			http.Error(w, "Game ID is required", http.StatusBadRequest)
-			fmt.Println("Invalid game ID:", id)
-			return
-		}
-
-		store.RLock()
-		game := store.Games[id]
-		store.RUnlock()
-
-		if game == nil {
-			http.Error(w, "Game not found", http.StatusNotFound)
-			fmt.Println("Game not found for ID:", id)
-			return
-		}
-
-		w.Write([]byte("Game is active"))
-	})
-
-	http.HandleFunc("/ws/start", func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		public := r.URL.Query().Get("public") == "true"
-		if err != nil {
-			fmt.Println("Error upgrading connection:", err)
-			return
-		}
-
-		createGame(conn, store, public)
-	})
-
-	http.HandleFunc("/ws/view/", func(w http.ResponseWriter, r *http.Request) {
-
-		path := r.URL.Path
-		id := path[len("/ws/view/"):]
-
-		if id == "" || len(id) != 5 {
-			http.Error(w, "Game ID is required", http.StatusBadRequest)
-			fmt.Println("Invalid game ID:", id)
-			return
-		}
-
-		store.RLock()
-		Game := store.Games[id]
-		store.RUnlock()
-		if Game == nil {
-			http.Error(w, "Game not found", http.StatusNotFound)
-			return
-		}
-
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			fmt.Println("Error upgrading connection:", err)
-			return
-		}
-
-		Game.Viewers = append(Game.Viewers, &Viewer{conn: conn})
-		fmt.Printf("New viewer connected to game %s, total viewers: %d\n", id, len(Game.Viewers))
-
-	})
-
-	http.ListenAndServe(":8080", nil)
+func CheckGameState(this js.Value, args []js.Value) interface{} {
+	return Game == nil
 }
 
-func createGame(user *websocket.Conn, store *GameStore, public bool) {
+func loadState(this js.Value, args []js.Value) interface{} {
 
-	roms := map[string]string{
-		"tetris":    "./games/tet.gb",
-		"sumar":     "./games/sumar.gb",
-		"pok green": "./games/pok2.gb",
-		"mar":       "./games/mar.gb",
-		"zelda":     "./games/zelda.gb",
-		"link":      "./games/link.gb",
-		"poke red":  "./games/red.gb",
-		"kirby":     "./games/kirby.gb",
-		"metroid":   "./games/metroid.gb",
+	if len(args) < 1 {
+		return "No state data provided"
 	}
 
-	store.Lock()
-	if len(store.Games) >= 10 {
-		user.WriteJSON(map[string]string{"error": "Maximum number of games reached"})
-		user.Close()
-		return
+	jsArray := args[0]
+
+	length := jsArray.Get("length").Int()
+	if length == 0 {
+		return "Empty state data"
 	}
-	store.Unlock()
 
-	ViewerChan := make(chan [160][144]byte, 10)
-	ControlChan := make(chan cpu.JoypadUpdate, 10)
-	endchan := make(chan bool)
-	donechan := make(chan bool)
-	pauseChan := make(chan bool)
+	stateData := make([]byte, length)
+	js.CopyBytesToGo(stateData, jsArray)
 
-	gb := cpu.GBInitDebug(ViewerChan, ControlChan)
-
-	Game := &Game{
-		ID:      genRandomID(),
-		gb:      gb,
-		Control: user,
-		Public:  public,
+	if len(stateData) != length {
+		return fmt.Sprintf("Data copy failed: expected %d bytes, got %d", length, len(stateData))
 	}
-	go HandleGameEnd(store, Game, endchan, donechan)
 
-	Game.Viewer_chan = ViewerChan
-	store.Lock()
-	store.Games[Game.ID] = Game
-	store.Unlock()
-	user.WriteJSON(map[string]string{"id": Game.ID})
-	fmt.Println("waiting for user to send rom path...")
-
-	var rom RomUpdate
-	err := user.ReadJSON(&rom)
+	err := Game.gb.LoadState(stateData)
 	if err != nil {
-		fmt.Println("Error reading ROM path from user:", err)
-		user.WriteJSON(map[string]string{"error": "Invalid ROM path"})
-		user.Close()
-		endchan <- true
-		return
-	}
-	fmt.Println("Received message from user:", string(rom.Rom))
-
-	if rom.Rom == "load" {
-		romdata := rom.State
-		gb.LoadState(romdata)
-	} else {
-		romPath, exists := roms[string(rom.Rom)]
-		if !exists {
-			user.WriteJSON(map[string]string{"error": "ROM not found"})
-			fmt.Println("ROM not found for message:", string(rom.Rom))
-			user.Close()
-			endchan <- true
-			return
-		}
-
-		romData, err := os.ReadFile(romPath)
-		if err != nil {
-			fmt.Println("Error loading ROM:", err)
-			user.WriteJSON(map[string]string{"error": "Error loading ROM"})
-			user.Close()
-			endchan <- true
-			return
-		}
-
-		gb.LOADROM(romData)
+		return fmt.Sprintf("Failed to load state: %v", err)
 	}
 
-	user.WriteJSON(map[string]string{"success": "rom loaded"})
+	Game.romLoaded = true
 
-	go UpdateScreen(Game)
-	go HandleControl(Game, endchan, pauseChan)
+	return "State loaded successfully"
+}
 
-	go gb.Start(donechan, nil, pauseChan)
-	store.logger.Println("New game created with ID:", Game.ID, " and ROM:", rom.Rom)
+func getState(this js.Value, args []js.Value) interface{} {
 
-	// rompath := "./cpu/individual/acid.gb"
-	// rompath := "./tet.gb"
-	// romData, err := os.ReadFile(rompath)
-	// if err != nil {
-	// 	fmt.Println("Error loading ROM:", err)
-	// 	return
-	// }
-	// gb.LOADROM(romData)
-	// fmt.Println("New game created with ID:", Game.ID)
+	if Game == nil || !Game.romLoaded {
+		return "Gameboy not initialized or ROM not loaded"
+	}
 
-	// user.WriteJSON(map[string]string{"id": Game.ID})
+	state := Game.gb.SaveState()
+	if state == nil {
+		return "Failed to get state"
+	}
+	stateData := make([]byte, len(state))
+	copy(stateData, state)
+	uint8Array := js.Global().Get("Uint8Array").New(len(stateData))
+	js.CopyBytesToJS(uint8Array, stateData)
+	return uint8Array
+}
 
-	// go gb.Start(nil, nil)
+func startGame(this js.Value, args []js.Value) interface{} {
+	if Game.gb == nil || !Game.romLoaded {
+		return "Gameboy not initialized or ROM not loaded"
+	}
 
+	if Game.running {
+		return "Game already running"
+	}
+	Game.running = true
+
+	Game.doneChan = make(chan bool)
+	Game.pauseChan = make(chan bool)
+	Game.endChan = make(chan bool)
+
+	go Game.gb.Start(Game.doneChan, nil, Game.pauseChan)
+
+	go func() {
+		for {
+			select {
+			case frame := <-Game.viewerChan:
+				if frame != Game.oldFrame {
+					Game.oldFrame = frame
+					frameData := PackFrameBuffer(frame)
+
+					uint8Array := js.Global().Get("Uint8Array").New(len(frameData))
+					js.CopyBytesToJS(uint8Array, frameData)
+
+					js.Global().Call("onFrameUpdate", uint8Array)
+				}
+			case <-Game.endChan:
+				return
+			}
+		}
+	}()
+
+	return "Game started"
 }
 
 func PackFrameBuffer(screen [160][144]byte) []byte {
@@ -280,84 +144,121 @@ func PackFrameBuffer(screen [160][144]byte) []byte {
 	return out
 }
 
-func UpdateScreen(g *Game) {
-	for screen := range g.Viewer_chan {
-		flatBytes := PackFrameBuffer(screen)
-
-		activeViewers := g.Viewers[:0]
-		for _, viewer := range g.Viewers {
-			if viewer.oldscreen == screen {
-				continue
-			}
-			viewer.oldscreen = screen
-			if !g.Public {
-				if viewer.conn != g.Control {
-					continue
-				}
-			}
-			err := viewer.conn.WriteMessage(websocket.BinaryMessage, flatBytes)
-			if err != nil {
-				viewer.conn.Close()
-			} else {
-				activeViewers = append(activeViewers, viewer)
-			}
-		}
-		g.Viewers = activeViewers
+func loadRom(this js.Value, args []js.Value) interface{} {
+	if len(args) < 1 {
+		return "No ROM provided"
 	}
+
+	if Game.gb == nil {
+		return "Gameboy not initialized"
+	}
+
+	if Game.romLoaded {
+		return "ROM already loaded"
+	}
+
+	jsArray := args[0]
+	if jsArray.Type() != js.TypeObject {
+		return "Invalid ROM data type"
+	}
+
+	// Get the length of the array
+	length := jsArray.Get("length").Int()
+	if length == 0 {
+		return "Empty ROM data"
+	}
+
+	// Create a Go byte slice and copy data from JavaScript
+	romData := make([]byte, length)
+	js.CopyBytesToGo(romData, jsArray)
+
+	// Load ROM into gameboy
+	Game.gb.LOADROM(romData)
+
+	Game.romLoaded = true
+	return "ROM loaded successfully"
 }
 
-func HandleControl(g *Game, endchan chan bool, pauseChan chan bool) {
-	for {
-		var update cpu.JoypadUpdate
-		err := g.Control.ReadJSON(&update)
-		if err != nil {
-			fmt.Println("Error reading control update:", err)
-			g.Control.Close()
-			endchan <- true
-			return
-		}
-		if update.Meta == "" {
-			g.gb.ControlChan <- update
-		}
-
-		if update.Meta == "savestate" && update.SaveState {
-			state := g.gb.SaveState()
-			g.Control.WriteMessage(websocket.BinaryMessage, state)
-		}
-
-		if update.Meta == "pause" {
-			pauseChan <- update.Pause
-		}
-
+func ChangeSpeed(this js.Value, args []js.Value) interface{} {
+	if Game.gb == nil {
+		return "Gameboy not initialized"
 	}
+
+	if len(args) < 1 {
+		return "No speed multiplier provided"
+	}
+
+	mult := args[0].Int()
+	Game.gb.ChangeSpeed(mult)
+	return fmt.Sprintf("Game speed changed to %d", mult)
 }
 
-func HandleGameEnd(store *GameStore, game *Game, endchan, donechan chan bool) {
-	<-endchan
-	donechan <- true
-	fmt.Println("Game ended:", game.ID)
+func InitGameboy(this js.Value, args []js.Value) interface{} {
+	viewerChan := make(chan [160][144]byte)
+	controlChan := make(chan cpu.JoypadUpdate)
+	gb := cpu.GBInitDebug(viewerChan, controlChan)
 
-	for _, viewer := range game.Viewers {
-		viewer.conn.Close()
+	Game = &game{
+		gb:          gb,
+		viewerChan:  viewerChan,
+		controlChan: controlChan,
 	}
-	store.Lock()
-	delete(store.Games, game.ID)
-	store.Unlock()
-	game.Control.Close()
-	fmt.Println("Game removed from active games:", game.ID)
-	store.logger.Println("Game removed from active games:", game.ID)
+
+	return "gameboy initialized"
 }
 
-func genRandomID() string {
-	letters := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	result := make([]byte, 5)
-
-	randomBytes := make([]byte, 5)
-	rand.Read(randomBytes)
-
-	for i, b := range randomBytes {
-		result[i] = letters[b%byte(len(letters))]
+func pauseGame(this js.Value, args []js.Value) interface{} {
+	if Game.gb == nil || !Game.romLoaded {
+		return "Gameboy not initialized or ROM not loaded"
 	}
 
-	return string(result)
+	Game.pauseChan <- true
+	return "Game paused"
+
+}
+
+func endGame(this js.Value, args []js.Value) interface{} {
+	Game.endChan <- true
+	Game = nil
+	return "Game ended"
+}
+
+func resumeGame(this js.Value, args []js.Value) interface{} {
+	if Game.gb == nil || !Game.romLoaded {
+		return "Gameboy not initialized or ROM not loaded"
+	}
+
+	Game.pauseChan <- false
+	return "Game resumed"
+}
+
+func sendInput(this js.Value, args []js.Value) interface{} {
+	if len(args) < 2 {
+		return "No input provided"
+	}
+
+	if Game.gb == nil || !Game.romLoaded {
+		return "Gameboy not initialized"
+	}
+
+	pressed := args[0].Bool()
+	key := args[1].Int()
+
+	if key < 0 || key > 7 {
+		return "Invalid key index"
+	}
+
+	update := cpu.JoypadUpdate{
+		Key:     key,
+		Pressed: pressed,
+	}
+
+	select {
+	case Game.gb.ControlChan <- update:
+		return "input sent"
+	default:
+		fmt.Println("Control channel is full, dropping input")
+		return "control channel full, input dropped"
+	}
+
 }
