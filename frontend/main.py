@@ -25,3 +25,8 @@ app.mount("/static",StaticFiles(directory="static"),name="static")
 async def index():
     indexPath = static_dir/ "index.html"
     return FileResponse(indexPath)
+
+@app.head("/")
+async def head_index():
+    indexPath = static_dir / "index.html"
+    return FileResponse(indexPath)

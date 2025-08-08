@@ -435,7 +435,7 @@ const controlMap = {
 
 const keyMap = {
     "a": "A",
-    "b": "B",
+    "s": "B",
     "Escape": "SELECT",
     "Enter": "START",
     "ArrowUp": "UP",
